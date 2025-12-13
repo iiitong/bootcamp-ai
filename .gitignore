@@ -50,3 +50,6 @@ dist-ssr/
 *.db
 *.sqlite
 *.sqlite3
+
+.specify/cache/
+.specify/temp/
