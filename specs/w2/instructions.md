@@ -19,7 +19,7 @@
     - 如果查询不包含 limit 子句，则默认添加 limit 1000 子句。
 - 输出格式是 json，前端将其组织成表格，并显示出来。
 
-后端使用 Python (uv) / FastAPI / sqlglot / openai sdk 来实现。 前端使用 React / refine 5 / tailwind / ant design 来实现。sql editor 使用 monaco editor 来实现。
+后端使用 Python (uv) / FastAPI / sqlglot / openai sdk 来实现。 前端使用 React / refine 5 / tailwind / ant design 来实现, 使用 yarn 来作为包管理工具。sql editor 使用 monaco editor 来实现。
 
 OpenAI API key 在环境变量 OPENAI_API_KEY 中。数据库连接和 metadata 存储在 sqlite 数据库中，放在 ~/.db_query/db_query.db 中。
 
@@ -50,3 +50,7 @@ POST /api/v1/dbs/{name}/query/natural
 {
   "prompt": "查询用户表的所有信息"
 }
+
+
+## 补充功能
+需要增加一个 查询结果导出的功能，查询之后，点击导出按钮，可以选择导出 csv/json 格式文件。

@@ -1,0 +1,163 @@
+### DB Query Tool API Tests
+### VSCode REST Client Extension
+### 使用方法: 点击 "Send Request" 发送请求
+
+@baseUrl = http://localhost:8000/api/v1
+@dbName = testdb
+
+###############################################################################
+# Health Check
+###############################################################################
+
+### 健康检查
+GET http://localhost:8000/health
+
+### 根路径
+GET http://localhost:8000/
+
+###############################################################################
+# Database Connection Management (数据库连接管理)
+###############################################################################
+
+### 1. 获取所有数据库连接列表
+GET {{baseUrl}}/dbs
+
+### 2. 添加新数据库连接 (需要本地运行 PostgreSQL)
+PUT {{baseUrl}}/dbs/{{dbName}}
+Content-Type: application/json
+
+{
+    "url": "postgresql://postgres:postgres@localhost:5432/postgres"
+}
+
+### 3. 获取数据库元数据
+GET {{baseUrl}}/dbs/{{dbName}}
+
+### 4. 强制刷新元数据缓存
+GET {{baseUrl}}/dbs/{{dbName}}?refresh=true
+
+### 5. 删除数据库连接
+DELETE {{baseUrl}}/dbs/{{dbName}}
+
+###############################################################################
+# SQL Query Execution (SQL 查询执行)
+###############################################################################
+
+### 6. 执行 SELECT 查询 - 获取 PostgreSQL 版本
+POST {{baseUrl}}/dbs/{{dbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT version()"
+}
+
+### 7. 执行 SELECT 查询 - 查询所有表
+POST {{baseUrl}}/dbs/{{dbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = 'public'"
+}
+
+### 8. 执行 SELECT 查询 - 带 LIMIT
+POST {{baseUrl}}/dbs/{{dbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT * FROM pg_tables LIMIT 5"
+}
+
+### 9. 测试非 SELECT 查询被拒绝 (应返回 400 错误)
+POST {{baseUrl}}/dbs/{{dbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "INSERT INTO test (name) VALUES ('test')"
+}
+
+### 10. 测试 SQL 语法错误 (应返回 400 错误)
+POST {{baseUrl}}/dbs/{{dbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELEC * FORM users"
+}
+
+###############################################################################
+# Natural Language Query (自然语言查询)
+###############################################################################
+
+### 11. 自然语言生成 SQL - 查询所有表
+# 注意: 需要设置 OPENAI_API_KEY 环境变量
+POST {{baseUrl}}/dbs/{{dbName}}/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "列出所有的表"
+}
+
+### 12. 自然语言生成 SQL - 复杂查询
+POST {{baseUrl}}/dbs/{{dbName}}/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "查询 public schema 下的所有表名和它们的行数估计"
+}
+
+###############################################################################
+# Error Cases (错误场景测试)
+###############################################################################
+
+### 13. 测试无效的数据库连接 URL
+PUT {{baseUrl}}/dbs/invaliddb
+Content-Type: application/json
+
+{
+    "url": "mysql://user:pass@localhost/db"
+}
+
+### 14. 测试不存在的数据库连接
+GET {{baseUrl}}/dbs/nonexistent
+
+### 15. 测试连接失败的数据库
+PUT {{baseUrl}}/dbs/faildb
+Content-Type: application/json
+
+{
+    "url": "postgresql://user:wrongpass@localhost:5432/nonexistent"
+}
+
+###############################################################################
+# Complete Workflow (完整工作流)
+###############################################################################
+
+### Step 1: 添加数据库
+# @name addDb
+PUT {{baseUrl}}/dbs/mydb
+Content-Type: application/json
+
+{
+    "url": "postgresql://postgres:postgres@localhost:5432/postgres"
+}
+
+### Step 2: 查看元数据
+GET {{baseUrl}}/dbs/mydb
+
+### Step 3: 执行查询
+POST {{baseUrl}}/dbs/mydb/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT current_database(), current_user, now()"
+}
+
+### Step 4: 自然语言查询
+POST {{baseUrl}}/dbs/mydb/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "显示当前数据库的连接信息"
+}
+
+### Step 5: 清理 - 删除数据库连接
+DELETE {{baseUrl}}/dbs/mydb

@@ -1,230 +1,201 @@
-# Quickstart: Database Query Tool
+# 快速入门：数据库查询工具
 
-**Date**: 2025-12-13
-**Branch**: `001-db-query-tool`
+本指南帮助你在本地快速启动和运行数据库查询工具。
 
-## Prerequisites
+## 前置条件
 
-- Python 3.14+ (via uv)
-- Node.js 24+ (for frontend)
-- PostgreSQL database to connect to
-- OpenAI API key
+- Python 3.14+
+- Node.js 18+
+- yarn
+- uv (Python 包管理器)
+- PostgreSQL (用于测试的目标数据库)
 
-## Environment Setup
-
-### 1. Set Environment Variables
+### 安装 uv
 
 ```bash
-# Required: OpenAI API key for natural language queries
-export OPENAI_API_KEY="sk-your-api-key-here"
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 或使用 pip
+pip install uv
 ```
 
-### 2. Backend Setup
+## 项目设置
+
+### 1. 克隆仓库并进入目录
 
 ```bash
-cd w2/db_query/backend
+git clone <repository-url>
+cd AI-study
+git checkout 001-db-query-tool
+```
 
-# Install dependencies with uv
+### 2. 后端设置
+
+```bash
+cd backend
+
+# 安装依赖
 uv sync
 
-# Run the backend server
+# 设置环境变量
+export OPENAI_API_KEY="your-openai-api-key"
+
+# 启动开发服务器
 uv run uvicorn src.main:app --reload --port 8000
 ```
 
-The backend will be available at `http://localhost:8000`.
+后端将在 http://localhost:8000 运行。
 
-### 3. Frontend Setup
+访问 http://localhost:8000/docs 查看 API 文档。
+
+### 3. 前端设置
+
+打开新的终端窗口：
 
 ```bash
-cd w2/db_query/frontend
+cd frontend
 
-# Install dependencies
-npm install
+# 安装依赖
+yarn install
 
-# Run the development server
-npm run dev
+# 启动开发服务器
+yarn dev
 ```
 
-The frontend will be available at `http://localhost:5173`.
+前端将在 http://localhost:5173 运行。
 
-## Quick Test
+## 验证安装
 
-### 1. Add a Database Connection
+### 检查后端健康状态
 
 ```bash
-curl -X PUT http://localhost:8000/api/v1/dbs/mydb \
+curl http://localhost:8000/api/v1/dbs
+# 应返回: []
+```
+
+### 添加测试数据库
+
+```bash
+curl -X PUT http://localhost:8000/api/v1/dbs/testdb \
   -H "Content-Type: application/json" \
   -d '{"url": "postgresql://postgres:postgres@localhost:5432/postgres"}'
 ```
 
-Expected response:
-```json
-{
-  "databaseName": "mydb",
-  "tables": [...],
-  "views": [...],
-  "extractedAt": "2025-12-13T10:00:00Z"
-}
-```
-
-### 2. List Database Connections
+### 执行测试查询
 
 ```bash
-curl http://localhost:8000/api/v1/dbs
-```
-
-Expected response:
-```json
-[
-  {
-    "name": "mydb",
-    "urlMasked": "postgresql://postgres:***@localhost:5432/postgres",
-    "createdAt": "2025-12-13T10:00:00Z",
-    "lastConnectedAt": "2025-12-13T10:00:00Z"
-  }
-]
-```
-
-### 3. Execute a SQL Query
-
-```bash
-curl -X POST http://localhost:8000/api/v1/dbs/mydb/query \
+curl -X POST http://localhost:8000/api/v1/dbs/testdb/query \
   -H "Content-Type: application/json" \
-  -d '{"sql": "SELECT * FROM pg_tables LIMIT 5"}'
+  -d '{"sql": "SELECT version()"}'
 ```
 
-Expected response:
-```json
-{
-  "columns": ["schemaname", "tablename", "tableowner", ...],
-  "rows": [...],
-  "rowCount": 5,
-  "executionTimeMs": 12.5,
-  "truncated": false
-}
-```
-
-### 4. Generate SQL from Natural Language
-
-```bash
-curl -X POST http://localhost:8000/api/v1/dbs/mydb/query/natural \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "显示所有表的名称"}'
-```
-
-Expected response:
-```json
-{
-  "sql": "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
-  "explanation": "This query retrieves all table names from the public schema",
-  "confidence": 0.95
-}
-```
-
-## Project Structure After Setup
+## 目录结构
 
 ```
-w2/db_query/
+.
 ├── backend/
+│   ├── pyproject.toml      # Python 项目配置
 │   ├── src/
-│   │   ├── main.py           # FastAPI app
-│   │   ├── models/           # Pydantic models
-│   │   ├── services/         # Business logic
-│   │   ├── api/v1/           # API routes
-│   │   └── storage/          # SQLite operations
-│   ├── tests/
-│   └── pyproject.toml
+│   │   ├── main.py         # FastAPI 入口
+│   │   ├── api/            # API 端点
+│   │   ├── models/         # Pydantic 模型
+│   │   ├── services/       # 业务逻辑
+│   │   └── storage/        # 数据存储
+│   └── tests/              # 测试
 │
 ├── frontend/
+│   ├── package.json        # Node.js 配置
 │   ├── src/
-│   │   ├── App.tsx           # Refine app
-│   │   ├── types/            # TypeScript interfaces
-│   │   ├── components/       # UI components
-│   │   └── pages/            # Page components
-│   ├── package.json
-│   └── tsconfig.json
+│   │   ├── App.tsx         # 应用入口
+│   │   ├── components/     # React 组件
+│   │   ├── pages/          # 页面组件
+│   │   └── providers/      # Refine providers
+│   └── tests/              # 测试
 │
-└── README.md
+└── specs/001-db-query-tool/
+    ├── spec.md             # 功能规范
+    ├── plan.md             # 实现计划
+    ├── research.md         # 技术研究
+    ├── data-model.md       # 数据模型
+    └── contracts/          # API 契约
 ```
 
-## Data Storage Location
+## 常用命令
 
-Local data is stored in:
-```
-~/.db_query/db_query.db
-```
-
-This SQLite database contains:
-- Database connection configurations (URLs base64-encoded)
-- Cached metadata for each connected database
-
-## API Documentation
-
-Once the backend is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## Common Issues
-
-### Connection Refused
-
-If you see "Connection refused" when adding a database:
-1. Ensure PostgreSQL is running
-2. Check the connection URL format
-3. Verify network access to the database host
-
-### OpenAI API Error
-
-If natural language queries fail:
-1. Verify `OPENAI_API_KEY` is set correctly
-2. Check your OpenAI API quota
-3. Ensure network access to api.openai.com
-
-### CORS Issues
-
-The backend allows all origins by default. If you still see CORS errors:
-1. Verify the backend is running on port 8000
-2. Check browser console for specific CORS error messages
-
-## Development Commands
-
-### Backend
+### 后端
 
 ```bash
-# Run with auto-reload
-uv run uvicorn src.main:app --reload
-
-# Run type checking
-uv run mypy src/
-
-# Run tests
+# 运行测试
 uv run pytest
 
-# Format code
-uv run ruff format src/
+# 运行类型检查
+uv run mypy src
+
+# 格式化代码
+uv run ruff format src tests
+uv run ruff check --fix src tests
 ```
 
-### Frontend
+### 前端
 
 ```bash
-# Development server
-npm run dev
+# 运行测试
+yarn test
 
-# Type checking
-npm run typecheck
+# 类型检查
+yarn typecheck
 
-# Build for production
-npm run build
+# 构建生产版本
+yarn build
 
-# Run tests
-npm run test
+# 预览生产构建
+yarn preview
 ```
 
-## Next Steps
+## 配置
 
-1. **Add your database**: Use the UI or API to add your PostgreSQL connection
-2. **Explore schema**: Browse tables and columns in the schema tree
-3. **Write queries**: Use the Monaco SQL editor to write and execute queries
-4. **Try natural language**: Describe what data you need in plain language
+### 环境变量
 
-For detailed API documentation, see [contracts/openapi.yaml](./contracts/openapi.yaml).
+| 变量 | 描述 | 默认值 |
+|------|------|--------|
+| `OPENAI_API_KEY` | OpenAI API 密钥 | (必需) |
+| `DB_QUERY_DATA_DIR` | 数据存储目录 | `~/.db_query` |
+
+### SQLite 数据库位置
+
+默认位置: `~/.db_query/db_query.db`
+
+可通过 `DB_QUERY_DATA_DIR` 环境变量修改。
+
+## 故障排除
+
+### 后端无法启动
+
+1. 确保 Python 3.11+ 已安装: `python --version`
+2. 确保 uv 已安装: `uv --version`
+3. 检查端口 8000 是否被占用: `lsof -i :8000`
+
+### 前端无法连接后端
+
+1. 确保后端正在运行
+2. 检查 CORS 配置 (默认允许所有 origin)
+3. 确认后端地址: `http://localhost:8000`
+
+### 数据库连接失败
+
+1. 确保 PostgreSQL 正在运行
+2. 验证连接 URL 格式: `postgresql://user:pass@host:port/dbname`
+3. 检查网络连接和防火墙设置
+
+### OpenAI API 错误
+
+1. 确保 `OPENAI_API_KEY` 已设置
+2. 验证 API 密钥有效
+3. 检查 API 配额
+
+## 下一步
+
+- 查看 [API 文档](http://localhost:8000/docs)
+- 阅读 [spec.md](./spec.md) 了解功能详情
+- 阅读 [data-model.md](./data-model.md) 了解数据结构

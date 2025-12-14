@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+/* Monaco Editor container styling */
+.monaco-editor-container {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Ant Design overrides for better integration */
+.ant-card-head-title {
+  font-weight: 600;
+}
+
+/* Query results table adjustments */
+.ant-table-cell {
+  font-family: "Fira Code", "Monaco", "Menlo", monospace;
+  font-size: 13px;
+}
+
+/* Schema tree styling */
+.ant-tree-title {
+  font-size: 13px;
+}
+
+/* Smooth transitions */
+.ant-card,
+.ant-btn {
+  transition: all 0.2s ease;
+}
+
+/* Better scrollbar for results */
+.ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ant-table-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.ant-table-body::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}

@@ -1,152 +1,153 @@
-# Feature Specification: Database Query Tool
+# 功能规范：数据库查询工具
 
-**Feature Branch**: `001-db-query-tool`
-**Created**: 2025-12-13
-**Status**: Draft
-**Input**: User description: "Database query tool with metadata extraction, SQL execution, and natural language query generation"
+**功能分支**: `001-db-query-tool`
+**创建日期**: 2025-12-13
+**状态**: 草稿
+**输入**: 用户描述: "数据库查询工具，支持添加数据库连接、查看元数据、执行 SQL 查询和自然语言生成 SQL"
 
-## User Scenarios & Testing *(mandatory)*
+## 用户场景与测试 *(必填)*
 
-### User Story 1 - Connect to Database and View Schema (Priority: P1)
+### 用户故事 1 - 连接数据库并查看结构 (优先级: P1)
 
-As a user, I want to add a database connection URL so that the system connects to my database and displays all available tables and views with their structure.
+作为用户，我希望能够添加一个数据库连接 URL，系统会自动连接数据库并展示所有表和视图的结构信息，以便我了解数据库中有哪些数据可用。
 
-**Why this priority**: This is the foundational capability - without database connectivity and metadata visibility, no other features can function. Users need to see what data is available before they can query it.
+**优先级说明**: 这是最基础的功能——没有数据库连接和元数据展示，其他功能都无法工作。用户必须先看到数据库结构才能进行查询。
 
-**Independent Test**: Can be fully tested by providing a valid PostgreSQL connection URL and verifying that the system displays the database's tables and views with their columns. Delivers immediate value by giving users visibility into their database structure.
+**独立测试**: 可以通过提供一个有效的 PostgreSQL 连接 URL 来完整测试，验证系统能够展示数据库的表和视图及其列信息。这个功能独立交付就能让用户了解数据库结构。
 
-**Acceptance Scenarios**:
+**验收场景**:
 
-1. **Given** the user is on the main interface, **When** they enter a valid PostgreSQL connection URL and submit, **Then** the system connects to the database, extracts metadata (tables, views, columns, types), stores it locally, and displays a browsable schema tree.
+1. **假设** 用户在主界面上，**当** 用户输入一个有效的 PostgreSQL 连接 URL 并提交，**那么** 系统连接数据库、提取元数据（表、视图、列、类型）、存储到本地 SQLite 数据库，并展示可浏览的结构树。
 
-2. **Given** a connection URL has been added previously, **When** the user returns to the application, **Then** they can see their previously added database connections with cached metadata.
+2. **假设** 用户之前已添加过数据库连接，**当** 用户再次打开应用，**那么** 可以看到之前保存的数据库连接及其缓存的元数据。
 
-3. **Given** the user enters an invalid or unreachable connection URL, **When** they submit, **Then** the system displays a clear error message explaining the connection failure (e.g., "Cannot connect: authentication failed" or "Host unreachable").
+3. **假设** 用户输入了无效或无法访问的连接 URL，**当** 用户提交时，**那么** 系统显示清晰的错误信息说明连接失败的原因（如 "连接失败：认证错误" 或 "主机无法访问"）。
 
-4. **Given** a database connection exists, **When** the user selects a table or view, **Then** they see the column names, data types, and any constraints (primary keys, foreign keys, nullable).
-
----
-
-### User Story 2 - Execute SQL Queries Manually (Priority: P2)
-
-As a user, I want to write and execute SQL SELECT queries against my connected database and see the results in a table format.
-
-**Why this priority**: Direct SQL querying is the core utility of the tool. Users familiar with SQL need this capability to explore and analyze their data. This enables power users immediately while NL generation (P3) serves users who need assistance.
-
-**Independent Test**: Can be fully tested by writing a SELECT query in the input area and verifying that results display in a formatted table. Delivers immediate value for data exploration.
-
-**Acceptance Scenarios**:
-
-1. **Given** a database is connected, **When** the user enters a valid SELECT query and executes it, **Then** the results are displayed in a tabular format with column headers.
-
-2. **Given** the user enters a query without a LIMIT clause, **When** they execute it, **Then** the system automatically appends LIMIT 1000 to prevent excessive data retrieval.
-
-3. **Given** the user enters a query with syntax errors, **When** they execute it, **Then** the system displays a helpful error message indicating the syntax problem before sending to the database.
-
-4. **Given** the user enters a non-SELECT statement (INSERT, UPDATE, DELETE, DROP), **When** they attempt to execute, **Then** the system blocks the query and displays an error: "Only SELECT queries are allowed."
-
-5. **Given** a SELECT query is executed successfully, **When** results are returned, **Then** the data is displayed in JSON format (camelCase field names) and rendered as an interactive table in the frontend.
+4. **假设** 数据库已连接，**当** 用户选择某个表或视图，**那么** 可以看到列名、数据类型和约束信息（主键、外键、是否可空）。
 
 ---
 
-### User Story 3 - Generate SQL from Natural Language (Priority: P3)
+### 用户故事 2 - 手动执行 SQL 查询 (优先级: P2)
 
-As a user, I want to describe what data I need in plain language so that the system generates a SQL query for me, which I can review, edit, and execute.
+作为用户，我希望能够编写并执行 SQL SELECT 查询，并以表格形式查看结果，以便探索和分析数据。
 
-**Why this priority**: Natural language query generation expands accessibility to users unfamiliar with SQL. It depends on having metadata (P1) available as context for the LLM, and the execution capability (P2) to run generated queries.
+**优先级说明**: SQL 查询是工具的核心功能。熟悉 SQL 的用户需要这个能力来探索和分析数据。这为高级用户提供即时价值，而自然语言生成（P3）则服务于需要帮助的用户。
 
-**Independent Test**: Can be fully tested by entering a natural language description (e.g., "show me all users who signed up last month") and verifying that a valid SQL query is generated. Delivers value by reducing the SQL knowledge barrier.
+**独立测试**: 可以通过在输入区域编写 SELECT 查询并验证结果以表格形式显示来完整测试。独立交付即可用于数据探索。
 
-**Acceptance Scenarios**:
+**验收场景**:
 
-1. **Given** a database is connected with cached metadata, **When** the user enters a natural language query description (e.g., "show all orders from last week with customer names"), **Then** the system sends the request to an LLM with table/view metadata as context and returns a generated SQL query.
+1. **假设** 数据库已连接，**当** 用户输入一个有效的 SELECT 查询并执行，**那么** 结果以表格形式显示，包含列标题。
 
-2. **Given** an LLM-generated SQL query is displayed, **When** the user reviews it, **Then** they can edit the query before execution if needed.
+2. **假设** 用户输入的查询没有 LIMIT 子句，**当** 执行时，**那么** 系统自动添加 LIMIT 1000 以防止返回过多数据。
 
-3. **Given** an LLM-generated SQL query is displayed, **When** the user clicks "Execute", **Then** the query goes through the same validation (syntax check, SELECT-only, auto-LIMIT) as manually entered queries.
+3. **假设** 用户输入的查询有语法错误，**当** 执行时，**那么** 系统在发送到数据库之前显示有帮助的错误信息，指出语法问题。
 
-4. **Given** the LLM cannot generate a valid query from the description, **When** this occurs, **Then** the system displays a message asking the user to rephrase or provide more details.
+4. **假设** 用户输入了非 SELECT 语句（INSERT、UPDATE、DELETE、DROP 等），**当** 尝试执行时，**那么** 系统阻止查询并显示错误："只允许执行 SELECT 查询"。
+
+5. **假设** SELECT 查询执行成功，**当** 返回结果时，**那么** 数据以 JSON 格式返回并在前端渲染为可交互的表格。
 
 ---
 
-### Edge Cases
+### 用户故事 3 - 自然语言生成 SQL (优先级: P3)
 
-- **Empty database**: When a connected database has no tables or views, display a message: "No tables or views found in this database."
-- **Very large result sets**: Even with LIMIT 1000, results may be large. Frontend should handle pagination or scrolling gracefully.
-- **Connection timeout**: If the database becomes unreachable during query execution, display a timeout error and suggest checking the connection.
-- **Special characters in data**: Ensure proper escaping/encoding when displaying data containing special characters, HTML, or JSON strings.
-- **Concurrent connections**: If a user adds multiple database connections, ensure each connection's metadata and queries are properly isolated.
-- **Schema changes**: If the database schema changes after metadata is cached, provide a way to refresh/resync the metadata.
-- **LLM unavailability**: If the LLM service is unavailable, display an error and allow the user to write SQL manually.
+作为用户，我希望能够用自然语言描述我需要的数据，系统为我生成 SQL 查询，我可以审查、编辑后执行。
 
-## Requirements *(mandatory)*
+**优先级说明**: 自然语言查询生成扩展了工具的适用范围，让不熟悉 SQL 的用户也能使用。它依赖于元数据（P1）作为 LLM 的上下文，以及查询执行能力（P2）来运行生成的查询。
 
-### Functional Requirements
+**独立测试**: 可以通过输入自然语言描述（如 "显示上个月注册的所有用户"）并验证生成了有效的 SQL 查询来完整测试。独立交付可降低 SQL 知识门槛。
 
-**Database Connection Management**
-- **FR-001**: System MUST accept PostgreSQL connection URLs in standard format (postgresql://user:pass@host:port/dbname)
-- **FR-002**: System MUST validate connection URLs before attempting to connect
-- **FR-003**: System MUST store connection configurations persistently in a local SQLite database
-- **FR-004**: System MUST support multiple database connections per user session
+**验收场景**:
 
-**Metadata Extraction**
-- **FR-005**: System MUST extract table and view names from the connected database
-- **FR-006**: System MUST extract column names, data types, and constraints for each table/view
-- **FR-007**: System MUST cache extracted metadata in the local SQLite database for reuse
-- **FR-008**: System MUST provide a mechanism to refresh cached metadata on demand
+1. **假设** 数据库已连接且有缓存的元数据，**当** 用户输入自然语言查询描述（如 "显示上周的所有订单及客户名称"），**那么** 系统将请求连同表/视图元数据作为上下文发送给 LLM，并返回生成的 SQL 查询。
 
-**SQL Query Execution**
-- **FR-009**: System MUST parse all SQL queries using a SQL parser before execution
-- **FR-010**: System MUST reject any query that is not a SELECT statement
-- **FR-011**: System MUST automatically append LIMIT 1000 to queries without a LIMIT clause
-- **FR-012**: System MUST return query results as JSON with camelCase field naming
-- **FR-013**: System MUST display syntax errors with helpful messages when query parsing fails
+2. **假设** LLM 生成的 SQL 查询已显示，**当** 用户查看时，**那么** 可以在执行前编辑查询。
 
-**Natural Language to SQL**
-- **FR-014**: System MUST send database metadata (tables, columns, types) as context when generating SQL
-- **FR-015**: System MUST display generated SQL for user review before execution
-- **FR-016**: System MUST allow users to edit generated SQL before execution
-- **FR-017**: Generated SQL MUST go through the same validation as manually entered queries
+3. **假设** LLM 生成的 SQL 查询已显示，**当** 用户点击 "执行"，**那么** 查询经过与手动输入查询相同的验证（语法检查、仅 SELECT、自动添加 LIMIT）。
 
-**User Interface**
-- **FR-018**: System MUST display database schema in a browsable hierarchical format
-- **FR-019**: System MUST display query results in a tabular format with column headers
-- **FR-020**: System MUST provide clear error messages for all failure scenarios
+4. **假设** LLM 无法根据描述生成有效查询，**当** 发生这种情况时，**那么** 系统显示消息请用户重新描述或提供更多细节。
 
-### Key Entities
+---
 
-- **DatabaseConnection**: Represents a saved database connection with its URL (credentials stored securely), display name, and last connected timestamp
-- **DatabaseMetadata**: Represents the cached schema information including tables, views, and their columns with types and constraints
-- **Table/View**: Represents a database table or view with its name, schema, and list of columns
-- **Column**: Represents a table/view column with name, data type, nullability, and constraint information
-- **Query**: Represents a SQL query with its text, execution timestamp, and associated connection
-- **QueryResult**: Represents the result of a query execution with column headers and row data
+### 边界情况
 
-### Technical Constraints (from Constitution)
+- **空数据库**: 当连接的数据库没有表或视图时，显示消息："该数据库中没有找到表或视图"。
+- **大结果集**: 即使有 LIMIT 1000，结果可能仍然很大。前端应优雅地处理分页或滚动。
+- **连接超时**: 如果在查询执行过程中数据库变得不可访问，显示超时错误并建议检查连接。
+- **数据中的特殊字符**: 确保在显示包含特殊字符、HTML 或 JSON 字符串的数据时正确转义/编码。
+- **多个连接**: 如果用户添加多个数据库连接，确保每个连接的元数据和查询正确隔离。
+- **结构变更**: 如果数据库结构在元数据缓存后发生变化，提供刷新/重新同步元数据的方式。
+- **LLM 不可用**: 如果 LLM 服务不可用，显示错误并允许用户手动编写 SQL。
 
-- Backend MUST use Pydantic v2 for all data models
-- All JSON responses MUST use camelCase field naming
-- Frontend MUST use TypeScript with strict mode enabled
-- No authentication required - open access for all users
-- All functions MUST have complete type annotations
+## 需求 *(必填)*
 
-### Assumptions
+### 功能需求
 
-- PostgreSQL is the primary (and initially only) supported database type
-- Users have valid PostgreSQL credentials and network access to their databases
-- The local SQLite database is stored in a standard application data directory
-- LLM integration uses an external API service (specific provider to be determined)
-- Maximum query result size is 1000 rows by default (can be reduced, not increased)
+**数据库连接管理**
+- **FR-001**: 系统必须接受标准格式的 PostgreSQL 连接 URL（postgresql://user:pass@host:port/dbname）
+- **FR-002**: 系统必须在尝试连接前验证连接 URL 格式
+- **FR-003**: 系统必须将连接配置持久化存储到本地 SQLite 数据库
+- **FR-004**: 系统必须支持每个用户会话管理多个数据库连接
 
-## Success Criteria *(mandatory)*
+**元数据提取**
+- **FR-005**: 系统必须从连接的数据库中提取表和视图名称
+- **FR-006**: 系统必须提取每个表/视图的列名、数据类型和约束信息
+- **FR-007**: 系统必须将提取的元数据缓存到本地 SQLite 数据库以便复用
+- **FR-008**: 系统必须提供按需刷新缓存元数据的机制
 
-### Measurable Outcomes
+**SQL 查询执行**
+- **FR-009**: 系统必须使用 SQL 解析器在执行前解析所有 SQL 查询
+- **FR-010**: 系统必须拒绝任何非 SELECT 语句的查询
+- **FR-011**: 系统必须为没有 LIMIT 子句的查询自动添加 LIMIT 1000
+- **FR-012**: 系统必须以 JSON 格式返回查询结果
+- **FR-013**: 系统必须在查询解析失败时显示有帮助的语法错误信息
 
-- **SC-001**: Users can add a database connection and view its schema within 30 seconds of providing a valid URL
-- **SC-002**: 100% of non-SELECT queries are blocked before reaching the database
-- **SC-003**: Query results display within 5 seconds for typical queries (under 1000 rows)
-- **SC-004**: Natural language queries generate valid SQL for 80% of common data exploration requests
-- **SC-005**: Users can successfully execute their first query within 2 minutes of adding a database connection
-- **SC-006**: All error scenarios produce user-friendly messages (no raw stack traces or technical errors shown to users)
-- **SC-007**: Cached metadata persists across application restarts without requiring reconnection
-- **SC-008**: Users report the schema browser helps them understand available data (qualitative feedback target: 4/5 satisfaction)
+**自然语言转 SQL**
+- **FR-014**: 系统必须在生成 SQL 时将数据库元数据（表、列、类型）作为上下文发送给 LLM
+- **FR-015**: 系统必须在执行前展示生成的 SQL 供用户审查
+- **FR-016**: 系统必须允许用户在执行前编辑生成的 SQL
+- **FR-017**: 生成的 SQL 必须经过与手动输入查询相同的验证
+
+**用户界面**
+- **FR-018**: 系统必须以可浏览的层级格式展示数据库结构
+- **FR-019**: 系统必须以表格形式展示查询结果，包含列标题
+- **FR-020**: 系统必须为所有失败场景提供清晰的错误信息
+
+### 关键实体
+
+- **数据库连接 (DatabaseConnection)**: 表示保存的数据库连接，包含连接 URL（明文存储，仅供本地使用）、显示名称和最后连接时间戳
+- **数据库元数据 (DatabaseMetadata)**: 表示缓存的结构信息，包括表、视图及其列的类型和约束
+- **表/视图 (Table/View)**: 表示数据库表或视图，包含名称、模式和列列表
+- **列 (Column)**: 表示表/视图的列，包含名称、数据类型、是否可空和约束信息
+- **查询 (Query)**: 表示 SQL 查询，包含查询文本、执行时间戳和关联的连接
+- **查询结果 (QueryResult)**: 表示查询执行的结果，包含列标题和行数据
+
+### 假设
+
+- PostgreSQL 是首要（且最初唯一）支持的数据库类型
+- 用户拥有有效的 PostgreSQL 凭据和数据库网络访问权限
+- 本地 SQLite 数据库存储在标准应用数据目录
+- LLM 集成使用 OpenAI 兼容 API（支持 OpenAI、Azure OpenAI、本地模型如 Ollama 等）
+- 默认最大查询结果为 1000 行（可减少，不可增加）
+- 应用采用 Web 架构（前后端分离），通过浏览器访问
+
+## 澄清记录
+
+### 会话 2025-12-13
+
+- Q: 数据库凭据存储方式？ → A: 明文存储（仅本地使用，信任本机安全）
+- Q: LLM 服务提供商？ → A: OpenAI 兼容 API（支持 OpenAI、Azure、本地模型等）
+- Q: 应用部署形态？ → A: Web 应用（前后端分离，浏览器访问）
+
+## 成功标准 *(必填)*
+
+### 可衡量的结果
+
+- **SC-001**: 用户在提供有效 URL 后 30 秒内可以添加数据库连接并查看其结构
+- **SC-002**: 100% 的非 SELECT 查询在到达数据库之前被阻止
+- **SC-003**: 典型查询（1000 行以下）的结果在 5 秒内显示
+- **SC-004**: 自然语言查询对 80% 的常见数据探索请求能生成有效 SQL
+- **SC-005**: 用户在添加数据库连接后 2 分钟内可以成功执行第一个查询
+- **SC-006**: 所有错误场景都产生用户友好的消息（不向用户显示原始堆栈跟踪或技术错误）
+- **SC-007**: 缓存的元数据在应用重启后持久保存，无需重新连接
+- **SC-008**: 用户反馈结构浏览器帮助他们理解可用数据（定性反馈目标：4/5 满意度）
