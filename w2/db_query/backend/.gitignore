@@ -19,37 +19,44 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Virtual environments
 .venv/
 venv/
 ENV/
 env/
 
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnp.*
-dist/
-dist-ssr/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
+# uv
+.uv/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Environment
+.env
+.env.local
+*.env
+
+# OS
 .DS_Store
+Thumbs.db
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-.specify/cache/
-.specify/temp/
+# Logs
+*.log
+logs/

@@ -1,0 +1,487 @@
+openapi: 3.1.0
+info:
+  title: 数据库查询工具 API
+  description: |
+    数据库查询工具的 REST API，支持 PostgreSQL 数据库的连接管理、
+    元数据提取、SQL 查询执行和自然语言生成 SQL。
+  version: 1.0.0
+  contact:
+    name: DB Query Tool
+
+servers:
+  - url: http://localhost:8000
+    description: 本地开发服务器
+
+tags:
+  - name: databases
+    description: 数据库连接管理
+  - name: queries
+    description: SQL 查询执行
+
+paths:
+  /api/v1/dbs:
+    get:
+      tags:
+        - databases
+      summary: 获取所有数据库连接
+      description: 返回所有已保存的数据库连接列表
+      operationId: listDatabases
+      responses:
+        '200':
+          description: 成功返回数据库连接列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatabaseInfo'
+              example:
+                - name: "mydb"
+                  url: "postgresql://user:***@localhost:5432/mydb"
+                  createdAt: "2025-12-13T10:00:00Z"
+                  updatedAt: "2025-12-13T10:00:00Z"
+
+  /api/v1/dbs/{name}:
+    put:
+      tags:
+        - databases
+      summary: 添加或更新数据库连接
+      description: |
+        添加新的数据库连接或更新已存在的连接。
+        系统会尝试连接数据库并提取元数据。
+      operationId: upsertDatabase
+      parameters:
+        - $ref: '#/components/parameters/DatabaseName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseCreateRequest'
+            example:
+              url: "postgresql://postgres:postgres@localhost:5432/mydb"
+      responses:
+        '200':
+          description: 数据库连接已创建/更新，返回元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadata'
+        '400':
+          description: 请求无效或无法连接到数据库
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUrl:
+                  summary: URL 格式无效
+                  value:
+                    detail: "URL 必须以 postgresql:// 或 postgres:// 开头"
+                    code: "INVALID_URL"
+                connectionFailed:
+                  summary: 连接失败
+                  value:
+                    detail: "无法连接到数据库: connection refused"
+                    code: "CONNECTION_FAILED"
+
+    get:
+      tags:
+        - databases
+      summary: 获取数据库元数据
+      description: 返回指定数据库的完整元数据，包括所有表和视图的结构信息
+      operationId: getDatabaseMetadata
+      parameters:
+        - $ref: '#/components/parameters/DatabaseName'
+        - name: refresh
+          in: query
+          description: 是否强制刷新缓存的元数据
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: 成功返回数据库元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadata'
+        '404':
+          description: 数据库连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "数据库连接 'mydb' 不存在"
+                code: "CONNECTION_NOT_FOUND"
+
+    delete:
+      tags:
+        - databases
+      summary: 删除数据库连接
+      description: 删除指定的数据库连接及其缓存的元数据
+      operationId: deleteDatabase
+      parameters:
+        - $ref: '#/components/parameters/DatabaseName'
+      responses:
+        '204':
+          description: 数据库连接已删除
+        '404':
+          description: 数据库连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/dbs/{name}/query:
+    post:
+      tags:
+        - queries
+      summary: 执行 SQL 查询
+      description: |
+        执行 SQL SELECT 查询并返回结果。
+
+        **限制**:
+        - 只允许 SELECT 语句
+        - 如果查询没有 LIMIT 子句，系统会自动添加 LIMIT 1000
+      operationId: executeQuery
+      parameters:
+        - $ref: '#/components/parameters/DatabaseName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+            example:
+              sql: "SELECT id, name, email FROM users WHERE status = 'active'"
+      responses:
+        '200':
+          description: 查询执行成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+              example:
+                columns:
+                  - "id"
+                  - "name"
+                  - "email"
+                rows:
+                  - id: 1
+                    name: "张三"
+                    email: "zhangsan@example.com"
+                  - id: 2
+                    name: "李四"
+                    email: "lisi@example.com"
+                rowCount: 2
+                executionTimeMs: 45.3
+        '400':
+          description: SQL 无效或非 SELECT 语句
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidSql:
+                  summary: SQL 语法错误
+                  value:
+                    detail: "SQL 语法错误: Expecting SELECT at line 1, col 0"
+                    code: "INVALID_SQL"
+                nonSelect:
+                  summary: 非 SELECT 语句
+                  value:
+                    detail: "只允许执行 SELECT 查询"
+                    code: "NON_SELECT_QUERY"
+        '404':
+          description: 数据库连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: 查询执行超时
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "查询执行超时"
+                code: "QUERY_TIMEOUT"
+
+  /api/v1/dbs/{name}/query/natural:
+    post:
+      tags:
+        - queries
+      summary: 自然语言生成 SQL
+      description: |
+        根据自然语言描述生成 SQL 查询。
+
+        系统会使用数据库的元数据作为上下文，调用 LLM 生成 SQL。
+        返回生成的 SQL 供用户审查，不会自动执行。
+      operationId: generateNaturalLanguageQuery
+      parameters:
+        - $ref: '#/components/parameters/DatabaseName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaturalLanguageQueryRequest'
+            example:
+              prompt: "查询所有活跃用户的邮箱和注册时间"
+      responses:
+        '200':
+          description: SQL 生成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NaturalLanguageQueryResult'
+              example:
+                generatedSql: "SELECT email, created_at FROM users WHERE status = 'active'"
+                result: null
+                error: null
+        '400':
+          description: 请求无效
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 数据库连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: LLM 服务错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: "无法生成 SQL，请尝试更具体的描述"
+                code: "LLM_ERROR"
+
+components:
+  parameters:
+    DatabaseName:
+      name: name
+      in: path
+      required: true
+      description: 数据库连接的唯一名称
+      schema:
+        type: string
+        pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$'
+        minLength: 1
+        maxLength: 64
+      example: "mydb"
+
+  schemas:
+    DatabaseCreateRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: PostgreSQL 连接 URL
+          pattern: '^postgres(ql)?://.+'
+          example: "postgresql://user:pass@localhost:5432/mydb"
+
+    DatabaseInfo:
+      type: object
+      required:
+        - name
+        - url
+        - createdAt
+        - updatedAt
+      properties:
+        name:
+          type: string
+          description: 连接名称
+        url:
+          type: string
+          description: 连接 URL (密码可能被隐藏)
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间
+        updatedAt:
+          type: string
+          format: date-time
+          description: 更新时间
+
+    ColumnInfo:
+      type: object
+      required:
+        - name
+        - dataType
+        - nullable
+      properties:
+        name:
+          type: string
+          description: 列名
+        dataType:
+          type: string
+          description: 数据类型
+        nullable:
+          type: boolean
+          description: 是否可空
+        defaultValue:
+          type: string
+          nullable: true
+          description: 默认值
+        isPrimaryKey:
+          type: boolean
+          default: false
+          description: 是否主键
+        isForeignKey:
+          type: boolean
+          default: false
+          description: 是否外键
+
+    TableInfo:
+      type: object
+      required:
+        - schemaName
+        - name
+        - type
+        - columns
+      properties:
+        schemaName:
+          type: string
+          description: Schema 名称
+        name:
+          type: string
+          description: 表或视图名称
+        type:
+          type: string
+          enum:
+            - TABLE
+            - VIEW
+          description: 类型
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnInfo'
+          description: 列列表
+
+    DatabaseMetadata:
+      type: object
+      required:
+        - name
+        - url
+        - tables
+        - views
+        - cachedAt
+      properties:
+        name:
+          type: string
+          description: 连接名称
+        url:
+          type: string
+          description: 连接 URL
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableInfo'
+          description: 表列表
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableInfo'
+          description: 视图列表
+        cachedAt:
+          type: string
+          format: date-time
+          description: 缓存时间
+
+    QueryRequest:
+      type: object
+      required:
+        - sql
+      properties:
+        sql:
+          type: string
+          description: 要执行的 SQL 查询
+          minLength: 1
+          maxLength: 10000
+
+    QueryResult:
+      type: object
+      required:
+        - columns
+        - rows
+        - rowCount
+        - executionTimeMs
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+          description: 列名列表
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: 数据行列表
+        rowCount:
+          type: integer
+          minimum: 0
+          description: 返回行数
+        executionTimeMs:
+          type: number
+          minimum: 0
+          description: 执行时间 (毫秒)
+
+    NaturalLanguageQueryRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          description: 自然语言查询描述
+          minLength: 1
+          maxLength: 1000
+
+    NaturalLanguageQueryResult:
+      type: object
+      required:
+        - generatedSql
+      properties:
+        generatedSql:
+          type: string
+          description: 生成的 SQL
+        result:
+          $ref: '#/components/schemas/QueryResult'
+          nullable: true
+          description: 执行结果 (如果自动执行)
+        error:
+          type: string
+          nullable: true
+          description: 错误信息
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+        - code
+      properties:
+        detail:
+          type: string
+          description: 错误描述
+        code:
+          type: string
+          description: 错误代码
+          enum:
+            - CONNECTION_FAILED
+            - CONNECTION_NOT_FOUND
+            - INVALID_URL
+            - INVALID_SQL
+            - NON_SELECT_QUERY
+            - QUERY_TIMEOUT
+            - LLM_ERROR
