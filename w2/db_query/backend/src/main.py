@@ -29,10 +29,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS configuration - allow all origins for local development
+# CORS configuration from environment
+# Default: localhost dev ports. Set CORS_ALLOWED_ORIGINS for production.
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

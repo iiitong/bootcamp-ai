@@ -25,6 +25,13 @@ class Settings:
         self.default_query_limit: int = int(os.getenv("DB_QUERY_DEFAULT_LIMIT", "1000"))
         self.query_timeout_seconds: int = int(os.getenv("DB_QUERY_TIMEOUT", "30"))
 
+        # CORS settings
+        # Comma-separated list of allowed origins, or "*" for all (development only)
+        cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174")
+        self.cors_allowed_origins: list[str] = [
+            origin.strip() for origin in cors_origins_str.split(",") if origin.strip()
+        ]
+
     def ensure_data_dir(self) -> None:
         """Ensure the data directory exists."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
