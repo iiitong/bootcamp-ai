@@ -1,21 +1,28 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNotification } from "@refinedev/core";
-import { Show } from "@refinedev/antd";
 import {
   Button,
   Card,
-  Descriptions,
   Space,
   Spin,
   Typography,
-  Tabs,
+  Breadcrumb,
+  Statistic,
+  Row,
+  Col,
+  Flex,
 } from "antd";
 import {
   ReloadOutlined,
   CodeOutlined,
   TableOutlined,
   EyeOutlined,
+  ArrowLeftOutlined,
+  DatabaseOutlined,
+  ClockCircleOutlined,
+  LinkOutlined,
+  AppstoreOutlined,
 } from "@ant-design/icons";
 
 import { SchemaTree } from "../../components/SchemaTree";
@@ -81,17 +88,24 @@ export function DatabaseShow() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", padding: 48 }}>
-        <Spin size="large" tip="Loading metadata..." />
-      </div>
+      <Spin size="large" tip="Loading metadata...">
+        <div style={{ display: "flex", justifyContent: "center", padding: 48, minHeight: 200 }} />
+      </Spin>
     );
   }
 
   if (!metadata) {
     return (
-      <Show title={dbName}>
+      <div>
+        <Breadcrumb
+          items={[
+            { title: <><DatabaseOutlined /> Databases</>, href: "/databases" },
+            { title: "Show" },
+          ]}
+          style={{ marginBottom: 16 }}
+        />
         <Text type="danger">Failed to load database metadata</Text>
-      </Show>
+      </div>
     );
   }
 
@@ -103,9 +117,38 @@ export function DatabaseShow() {
   );
 
   return (
-    <Show
-      title={metadata.name}
-      headerButtons={
+    <div>
+      {/* Breadcrumb */}
+      <Breadcrumb
+        items={[
+          {
+            title: (
+              <a onClick={() => navigate("/databases")} style={{ cursor: "pointer" }}>
+                <DatabaseOutlined /> Databases
+              </a>
+            ),
+          },
+          { title: "Show" },
+        ]}
+        style={{ marginBottom: 16 }}
+      />
+
+      {/* Header */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 16
+      }}>
+        <Space>
+          <Button
+            icon={<ArrowLeftOutlined />}
+            onClick={() => navigate("/databases")}
+          />
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {metadata.name}
+          </Typography.Title>
+        </Space>
         <Space>
           <Button
             icon={<ReloadOutlined spin={refreshing} />}
@@ -122,58 +165,73 @@ export function DatabaseShow() {
             Query
           </Button>
         </Space>
-      }
-    >
+      </div>
+
+      {/* Content */}
       <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-        <Card size="small">
-          <Descriptions column={{ xs: 1, sm: 2, md: 3 }}>
-            <Descriptions.Item label="Connection URL">
+        {/* Connection Info */}
+        <Card size="small" variant="outlined">
+          <Flex vertical gap={16}>
+            {/* Connection URL */}
+            <Flex align="center" gap={8}>
+              <LinkOutlined style={{ color: "#8c8c8c" }} />
+              <Text type="secondary" style={{ flexShrink: 0 }}>Connection:</Text>
               <Text copyable code style={{ fontSize: 12 }}>
                 {metadata.url}
               </Text>
-            </Descriptions.Item>
-            <Descriptions.Item label="Cached At">
-              {new Date(metadata.cachedAt).toLocaleString()}
-            </Descriptions.Item>
-            <Descriptions.Item label="Statistics">
-              <Space>
-                <Text>
-                  <TableOutlined /> {tableCount} tables
-                </Text>
-                <Text>
-                  <EyeOutlined /> {viewCount} views
-                </Text>
-                <Text>{columnCount} columns</Text>
-              </Space>
-            </Descriptions.Item>
-          </Descriptions>
+            </Flex>
+
+            {/* Statistics Row */}
+            <Row gutter={[24, 16]}>
+              <Col xs={12} sm={6}>
+                <Statistic
+                  title={<Text type="secondary"><TableOutlined /> Tables</Text>}
+                  value={tableCount}
+                  valueStyle={{ fontSize: 16 }}
+                />
+              </Col>
+              <Col xs={12} sm={6}>
+                <Statistic
+                  title={<Text type="secondary"><EyeOutlined /> Views</Text>}
+                  value={viewCount}
+                  valueStyle={{ fontSize: 16 }}
+                />
+              </Col>
+              <Col xs={12} sm={6}>
+                <Statistic
+                  title={<Text type="secondary"><AppstoreOutlined /> Columns</Text>}
+                  value={columnCount}
+                  valueStyle={{ fontSize: 16 }}
+                />
+              </Col>
+              <Col xs={12} sm={6}>
+                <Statistic
+                  title={<Text type="secondary"><ClockCircleOutlined /> Cached At</Text>}
+                  value={new Date(metadata.cachedAt).toLocaleString()}
+                  valueStyle={{ fontSize: 16 }}
+                />
+              </Col>
+            </Row>
+          </Flex>
         </Card>
 
         <Card
           title="Database Schema"
-          styles={{ body: { padding: 0, maxHeight: 600, overflow: "auto" } }}
+          variant="outlined"
+          styles={{ body: { padding: 0 } }}
         >
-          <Tabs
-            defaultActiveKey="tree"
-            items={[
-              {
-                key: "tree",
-                label: "Tree View",
-                children: (
-                  <SchemaTree
-                    tables={metadata.tables}
-                    views={metadata.views}
-                    onSelect={(schema, table) => {
-                      // Could navigate to table detail or copy to clipboard
-                      console.log(`Selected: ${schema}.${table}`);
-                    }}
-                  />
-                ),
-              },
-            ]}
-          />
+          <div style={{ maxHeight: 600, overflow: "auto" }}>
+            <SchemaTree
+              tables={metadata.tables}
+              views={metadata.views}
+              onSelect={(schema, table) => {
+                // Could navigate to table detail or copy to clipboard
+                console.log(`Selected: ${schema}.${table}`);
+              }}
+            />
+          </div>
         </Card>
       </Space>
-    </Show>
+    </div>
   );
 }

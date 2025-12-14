@@ -25,6 +25,7 @@ OpenAI API key 在环境变量 OPENAI_API_KEY 中。数据库连接和 metadata 
 
 后端 API 需要支持 cors，允许所有 origin。大致 API 如下：
 
+```
 # 获取所有已存储的数据库
 GET /api/v1/dbs
 # 添加一个数据库
@@ -50,7 +51,7 @@ POST /api/v1/dbs/{name}/query/natural
 {
   "prompt": "查询用户表的所有信息"
 }
-
+```
 
 ## 补充功能
 需要增加一个 查询结果导出的功能，查询之后，点击导出按钮，可以选择导出 csv/json 格式文件。

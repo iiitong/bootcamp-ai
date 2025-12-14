@@ -49,8 +49,9 @@ function buildTreeData(tables: TableInfo[], views: TableInfo[]): DataNode[] {
     if (schemaTables.length > 0) {
       const tablesNode: DataNode = {
         title: (
-          <span>
-            <TableOutlined /> Tables ({schemaTables.length})
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <TableOutlined />
+            <span>Tables ({schemaTables.length})</span>
           </span>
         ),
         key: `${schemaName}-tables`,
@@ -63,8 +64,9 @@ function buildTreeData(tables: TableInfo[], views: TableInfo[]): DataNode[] {
     if (schemaViews.length > 0) {
       const viewsNode: DataNode = {
         title: (
-          <span>
-            <EyeOutlined /> Views ({schemaViews.length})
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <EyeOutlined />
+            <span>Views ({schemaViews.length})</span>
           </span>
         ),
         key: `${schemaName}-views`,
@@ -82,10 +84,10 @@ function buildTreeData(tables: TableInfo[], views: TableInfo[]): DataNode[] {
 function buildTableNode(schemaName: string, table: TableInfo): DataNode {
   return {
     title: (
-      <span>
-        {table.type === "VIEW" ? <EyeOutlined /> : <TableOutlined />}{" "}
-        {table.name}
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        {table.type === "VIEW" ? <EyeOutlined /> : <TableOutlined />}
+        <span>{table.name}</span>
+        <Text type="secondary" style={{ fontSize: 11 }}>
           ({table.columns.length} columns)
         </Text>
       </span>
@@ -102,22 +104,22 @@ function buildColumnNode(
 ): DataNode {
   return {
     title: (
-      <span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         {column.isPrimaryKey && (
-          <KeyOutlined style={{ color: "#faad14", marginRight: 4 }} />
+          <KeyOutlined style={{ color: "#faad14" }} />
         )}
         {column.isForeignKey && (
-          <LinkOutlined style={{ color: "#1890ff", marginRight: 4 }} />
+          <LinkOutlined style={{ color: "#1890ff" }} />
         )}
-        <Text code>{column.name}</Text>
+        <Text code style={{ fontSize: 12 }}>{column.name}</Text>
         <Tag
-          color={column.nullable ? "default" : "blue"}
-          style={{ marginLeft: 8, fontSize: 10 }}
+          color="default"
+          style={{ fontSize: 10, lineHeight: "16px", margin: 0 }}
         >
           {column.dataType}
         </Tag>
         {!column.nullable && (
-          <Tag color="red" style={{ fontSize: 10 }}>
+          <Tag color="red" style={{ fontSize: 10, lineHeight: "16px", margin: 0 }}>
             NOT NULL
           </Tag>
         )}
@@ -142,7 +144,7 @@ export function SchemaTree({ tables, views, onSelect }: SchemaTreeProps) {
 
   return (
     <Tree
-      showLine
+      showLine={{ showLeafIcon: false }}
       defaultExpandAll
       treeData={treeData}
       onSelect={(selectedKeys) => {
@@ -154,7 +156,7 @@ export function SchemaTree({ tables, views, onSelect }: SchemaTreeProps) {
           }
         }
       }}
-      style={{ padding: 8 }}
+      style={{ padding: "12px 16px" }}
     />
   );
 }

@@ -1,23 +1,42 @@
 import { Refine } from "@refinedev/core";
-import { RefineThemes, ThemedLayoutV2, useNotificationProvider } from "@refinedev/antd";
+import { RefineThemes, useNotificationProvider } from "@refinedev/antd";
 import routerProvider, {
   DocumentTitleHandler,
   UnsavedChangesNotifier,
 } from "@refinedev/react-router-v6";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { ConfigProvider, App as AntdApp } from "antd";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { ConfigProvider, App as AntdApp, Layout as AntdLayout } from "antd";
 import { DatabaseOutlined, CodeOutlined } from "@ant-design/icons";
 
 import { dataProvider } from "./providers/dataProvider";
 import { DatabaseList } from "./pages/databases/list";
 import { DatabaseShow } from "./pages/databases/show";
 import { QueryPage } from "./pages/query";
+import { CustomSider } from "./components/CustomSider";
 
 import "./index.css";
 
+function Layout() {
+  return (
+    <AntdLayout style={{ minHeight: "100vh" }}>
+      <CustomSider />
+      <AntdLayout>
+        <AntdLayout.Content style={{ padding: 24 }}>
+          <Outlet />
+        </AntdLayout.Content>
+      </AntdLayout>
+    </AntdLayout>
+  );
+}
+
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <ConfigProvider theme={RefineThemes.Blue}>
         <AntdApp>
           <Refine
@@ -49,34 +68,13 @@ function App() {
             }}
           >
             <Routes>
-              <Route
-                element={
-                  <ThemedLayoutV2
-                    Title={() => (
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "0 8px"
-                      }}>
-                        <DatabaseOutlined style={{ fontSize: 24 }} />
-                        <span style={{ fontWeight: 600, fontSize: 16 }}>
-                          DB Query Tool
-                        </span>
-                      </div>
-                    )}
-                  >
-                    <Routes>
-                      <Route index element={<Navigate to="/databases" />} />
-                      <Route path="/databases" element={<DatabaseList />} />
-                      <Route path="/databases/:id" element={<DatabaseShow />} />
-                      <Route path="/query" element={<QueryPage />} />
-                      <Route path="/query/:dbName" element={<QueryPage />} />
-                    </Routes>
-                  </ThemedLayoutV2>
-                }
-              >
-                <Route path="*" element={<Navigate to="/databases" />} />
+              <Route element={<Layout />}>
+                <Route index element={<Navigate to="/databases" replace />} />
+                <Route path="/databases" element={<DatabaseList />} />
+                <Route path="/databases/:id" element={<DatabaseShow />} />
+                <Route path="/query" element={<QueryPage />} />
+                <Route path="/query/:dbName" element={<QueryPage />} />
+                <Route path="*" element={<Navigate to="/databases" replace />} />
               </Route>
             </Routes>
             <UnsavedChangesNotifier />
