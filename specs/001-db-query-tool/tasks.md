@@ -5,10 +5,12 @@
 
 **Organization**: 按用户要求简化为 3 个阶段，涵盖后端、前端及集成。
 
+**更新**: 2025-12-14 - 新增用户故事 2.1 (导出查询结果) 相关任务
+
 ## Format: `[ID] [P?] [Story?] Description`
 
 - **[P]**: 可并行执行（不同文件，无依赖）
-- **[Story]**: 关联的用户故事 (US1, US2, US3)
+- **[Story]**: 关联的用户故事 (US1, US2, US2.1, US3)
 
 ## Path Conventions
 
@@ -153,7 +155,37 @@ cd backend && uv sync && uv run uvicorn src.main:app --reload --port 8000
 - [x] T036 [P] 创建 `frontend/src/components/QueryResults.tsx`，查询结果表格组件
 - [x] T037 [P] 创建 `frontend/src/components/NaturalLanguageInput.tsx`，自然语言输入组件
 
-### 2.5 页面实现
+### 2.5 导出功能 (新增 - US2.1)
+
+> 参考: [research.md #8 查询结果导出](./research.md#8-查询结果导出-新增)
+> 参考: [data-model.md #导出功能](./data-model.md#导出功能-前端)
+
+**说明**: 导出功能完全在前端实现，无需后端 API
+
+- [x] T054 [P] [US2.1] 创建 `frontend/src/utils/export.ts`，实现 exportToCSV 函数:
+  - UTF-8 with BOM 编码确保 Excel 正确显示中文
+  - 正确转义逗号、换行符、双引号
+  - 生成 query_result_YYYYMMDD_HHMMSS.csv 文件名
+- [x] T055 [P] [US2.1] 在 `frontend/src/utils/export.ts` 添加 exportToJSON 函数:
+  - 输出简单数组格式 [{col1: val1}, ...]
+  - 生成 query_result_YYYYMMDD_HHMMSS.json 文件名
+- [x] T056 [P] [US2.1] 在 `frontend/src/utils/export.ts` 添加 downloadBlob 辅助函数:
+  - 使用 Blob + URL.createObjectURL 触发下载
+  - 下载后清理临时 URL
+- [x] T057 [US2.1] 创建 `frontend/src/components/ExportButtons.tsx`，导出按钮组件:
+  - CSV 导出按钮
+  - JSON 导出按钮
+  - 无结果时隐藏或禁用按钮
+- [x] T058 [US2.1] 集成 ExportButtons 到 QueryResults.tsx 组件:
+  - 在结果表格上方或下方显示导出按钮
+  - 传递 columns 和 rows 数据给导出函数
+- [x] T059 [P] [US2.1] 创建 `frontend/tests/unit/export.test.ts`，导出功能单元测试:
+  - 测试 CSV 包含 UTF-8 BOM
+  - 测试特殊字符正确转义
+  - 测试文件名格式正确
+  - 测试 JSON 格式正确
+
+### 2.6 页面实现
 
 - [x] T038 [US1] 创建 `frontend/src/pages/databases/list.tsx`，数据库管理页面:
   - 显示已保存的数据库连接列表
@@ -169,7 +201,7 @@ cd backend && uv sync && uv run uvicorn src.main:app --reload --port 8000
   - 自然语言输入区域
   - 生成的 SQL 预览和编辑
 
-### 2.6 样式和入口
+### 2.7 样式和入口
 
 - [x] T041 创建 `frontend/src/index.css`，全局样式 (Tailwind 导入)
 - [x] T042 创建 `frontend/src/main.tsx`，React 入口文件
@@ -190,11 +222,17 @@ cd frontend && yarn install && yarn dev
 - SC-001: 30 秒内完成数据库连接和结构展示
 - SC-002: 100% 阻止非 SELECT 查询
 - SC-003: 5 秒内返回查询结果 (<1000 行)
+- SC-009: 导出 2 秒内完成下载 (1000 行以内)
+- SC-010: CSV 在 Excel 中打开时中文正确显示
 
 ### 3.1 端到端验证
 
 - [x] T043 [US1] 验证用户故事 1: 添加 PostgreSQL 连接并查看表结构
 - [x] T044 [US2] 验证用户故事 2: 执行 SELECT 查询并查看表格结果
+- [x] T060 [US2.1] 验证用户故事 2.1: 执行查询后导出 CSV 和 JSON 文件
+  - 验证 CSV 文件在 Excel 中打开时中文正确显示
+  - 验证 JSON 文件格式正确
+  - 验证文件名格式 query_result_YYYYMMDD_HHMMSS
 - [x] T045 [US3] 验证用户故事 3: 自然语言描述生成 SQL 并执行
 
 ### 3.2 边界情况测试
@@ -206,6 +244,8 @@ cd frontend && yarn install && yarn dev
 - [x] T048 测试非 SELECT 查询拒绝 (INSERT/UPDATE/DELETE/DROP)
 - [x] T049 测试 LIMIT 自动添加
 - [x] T050 测试 LLM 服务不可用场景
+- [x] T061 [US2.1] 测试导出空结果场景 (0 行时按钮禁用)
+- [x] T062 [US2.1] 测试 CSV 特殊字符转义 (逗号、换行、双引号)
 
 ### 3.3 文档更新
 
@@ -275,6 +315,8 @@ T021, T022, T023        # 所有测试文件
 # Phase 2 中可并行的任务:
 T024, T025, T026, T027, T028  # 所有配置文件
 T033, T034, T035, T036, T037  # 所有组件
+T054, T055, T056              # 导出工具函数 (US2.1)
+T059                          # 导出单元测试 (US2.1)
 ```
 
 ---
@@ -300,12 +342,27 @@ T033, T034, T035, T036, T037  # 所有组件
 | Phase | 任务数 | 可并行任务 | 关联用户故事 |
 |-------|--------|------------|--------------|
 | Phase 1: 后端 | 23 | 11 | US1, US2, US3 |
-| Phase 2: 前端 | 19 | 10 | US1, US2, US3 |
-| Phase 3: 集成 | 11 | 2 | 全部 |
-| **总计** | **53** | **23** | - |
+| Phase 2: 前端 | 25 | 14 | US1, US2, US2.1, US3 |
+| Phase 3: 集成 | 14 | 2 | 全部 |
+| **总计** | **62** | **27** | - |
+
+### 新增任务 (US2.1 导出功能)
+
+| 任务 ID | 描述 | 类型 |
+|---------|------|------|
+| T054 | exportToCSV 函数 | 前端工具 |
+| T055 | exportToJSON 函数 | 前端工具 |
+| T056 | downloadBlob 辅助函数 | 前端工具 |
+| T057 | ExportButtons 组件 | 前端组件 |
+| T058 | 集成到 QueryResults | 前端集成 |
+| T059 | 导出单元测试 | 测试 |
+| T060 | US2.1 端到端验证 | 集成测试 |
+| T061 | 空结果测试 | 边界测试 |
+| T062 | CSV 特殊字符测试 | 边界测试 |
 
 ### MVP 交付顺序
 
 1. **MVP v0.1**: Phase 1 完成 → 可通过 API 使用全部功能
-2. **MVP v0.2**: Phase 1 + Phase 2 完成 → 完整 Web 界面
-3. **Release v1.0**: Phase 1 + Phase 2 + Phase 3 完成 → 生产就绪
+2. **MVP v0.2**: Phase 1 + Phase 2 (不含 US2.1) → 完整 Web 界面
+3. **MVP v0.3**: Phase 1 + Phase 2 (含 US2.1) → 支持导出功能
+4. **Release v1.0**: Phase 1 + Phase 2 + Phase 3 完成 → 生产就绪

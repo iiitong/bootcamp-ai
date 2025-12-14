@@ -1,6 +1,6 @@
 # 数据模型：数据库查询工具
 
-**日期**: 2025-12-13
+**日期**: 2025-12-13 (更新: 2025-12-14)
 **功能分支**: `001-db-query-tool`
 
 ## 概述
@@ -330,6 +330,88 @@ sqlglot 解析验证
     ↓
 走 SQL 查询流程
 ```
+
+---
+
+## 导出功能 (前端)
+
+导出功能完全在前端实现，使用现有的 `QueryResult` 类型，不需要新的后端模型或 API 端点。
+
+### 导出配置类型
+
+```typescript
+// types/export.ts
+
+/**
+ * 导出格式枚举
+ */
+export type ExportFormat = 'csv' | 'json';
+
+/**
+ * 导出选项
+ */
+export interface ExportOptions {
+  /** 导出格式 */
+  format: ExportFormat;
+  /** 自定义文件名 (不含扩展名) */
+  filename?: string;
+}
+```
+
+### 导出工具函数签名
+
+```typescript
+// utils/export.ts
+
+/**
+ * 导出为 CSV 格式
+ * @param columns - 列名数组
+ * @param rows - 数据行数组
+ * @param filename - 可选文件名
+ */
+export function exportToCSV(
+  columns: string[],
+  rows: Record<string, unknown>[],
+  filename?: string
+): void;
+
+/**
+ * 导出为 JSON 格式
+ * @param rows - 数据行数组
+ * @param filename - 可选文件名
+ */
+export function exportToJSON(
+  rows: Record<string, unknown>[],
+  filename?: string
+): void;
+```
+
+### 导出数据流
+
+```
+QueryResult (内存中)
+    ↓
+用户点击导出按钮
+    ↓
+选择格式 (CSV/JSON)
+    ↓
+exportToCSV/exportToJSON
+    ↓
+生成文件内容 (含 UTF-8 BOM for CSV)
+    ↓
+创建 Blob → URL.createObjectURL
+    ↓
+触发浏览器下载
+    ↓
+清理临时 URL
+```
+
+### 文件命名规则
+
+| 格式 | 文件名模板 | 示例 |
+|------|-----------|------|
+| CSV | `query_result_YYYYMMDD_HHMMSS.csv` | `query_result_20251214_153022.csv` |
+| JSON | `query_result_YYYYMMDD_HHMMSS.json` | `query_result_20251214_153022.json` |
 
 ---
 

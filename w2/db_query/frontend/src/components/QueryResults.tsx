@@ -1,6 +1,7 @@
 import { Table, Typography, Empty, Tag, Space } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { QueryResult } from "../types";
+import { ExportButtons } from "./ExportButtons";
 
 const { Text } = Typography;
 
@@ -51,12 +52,22 @@ export function QueryResults({ result, loading }: QueryResultsProps) {
 
   return (
     <div>
-      <Space style={{ marginBottom: 8 }}>
-        <Text type="secondary">
-          {result.rowCount} row{result.rowCount !== 1 ? "s" : ""}
-        </Text>
-        <Text type="secondary">|</Text>
-        <Text type="secondary">{result.executionTimeMs.toFixed(2)} ms</Text>
+      <Space
+        style={{
+          marginBottom: 8,
+          width: "100%",
+          justifyContent: "space-between",
+        }}
+        align="center"
+      >
+        <Space>
+          <Text type="secondary">
+            {result.rowCount} row{result.rowCount !== 1 ? "s" : ""}
+          </Text>
+          <Text type="secondary">|</Text>
+          <Text type="secondary">{result.executionTimeMs.toFixed(2)} ms</Text>
+        </Space>
+        <ExportButtons result={result} disabled={loading} />
       </Space>
       <Table
         loading={loading}

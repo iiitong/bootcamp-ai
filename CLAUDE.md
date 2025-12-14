@@ -3,6 +3,8 @@
 Auto-generated from all feature plans. Last updated: 2025-12-13
 
 ## Active Technologies
+- Python 3.14+ (后端), TypeScript 5.0+ (前端) (001-query-export)
+- SQLite (本地存储连接和元数据缓存), PostgreSQL (目标查询数据库) (001-query-export)
 
 - Python 3.9+ (backend), TypeScript 5.0+ (frontend) (001-db-query-tool)
 

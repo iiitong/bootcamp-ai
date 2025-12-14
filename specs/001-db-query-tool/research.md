@@ -597,6 +597,194 @@ module.exports = {
 | OpenAI temperature=0 | ✅ |
 | Refine 自定义 data provider | ✅ |
 | Monaco Editor SQL 高亮 | ✅ |
+| CSV 导出 UTF-8 BOM | ✅ |
+| CSV 特殊字符转义 | ✅ |
+| JSON 导出数组格式 | ✅ |
+| 空结果禁用导出按钮 | ✅ |
+
+---
+
+## 8. 查询结果导出 (新增)
+
+**版本**: 无额外依赖（使用浏览器原生 API）
+
+**决策**: 前端实现导出，使用 Blob + URL.createObjectURL 触发下载
+
+### CSV 导出实现
+
+```typescript
+// src/utils/export.ts
+
+/**
+ * 生成 CSV 格式内容
+ * - 使用 UTF-8 with BOM 编码确保 Excel 正确显示中文
+ * - 正确转义包含逗号、换行符、双引号的字段
+ */
+export function exportToCSV(
+  columns: string[],
+  rows: Record<string, unknown>[],
+  filename?: string
+): void {
+  // UTF-8 BOM
+  const BOM = '\uFEFF';
+
+  // 转义 CSV 字段
+  const escapeField = (value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    // 包含逗号、换行或双引号时需要用双引号包裹
+    if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  // 构建 CSV 内容
+  const headerLine = columns.map(escapeField).join(',');
+  const dataLines = rows.map(row =>
+    columns.map(col => escapeField(row[col])).join(',')
+  );
+  const csvContent = BOM + [headerLine, ...dataLines].join('\n');
+
+  // 生成文件名
+  const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 15);
+  const finalFilename = filename || `query_result_${timestamp}.csv`;
+
+  // 触发下载
+  downloadBlob(csvContent, finalFilename, 'text/csv;charset=utf-8');
+}
+```
+
+### JSON 导出实现
+
+```typescript
+/**
+ * 生成 JSON 格式内容
+ * - 使用简单数组格式 [{col1: val1}, ...]
+ * - 格式化输出便于阅读
+ */
+export function exportToJSON(
+  rows: Record<string, unknown>[],
+  filename?: string
+): void {
+  const jsonContent = JSON.stringify(rows, null, 2);
+
+  // 生成文件名
+  const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 15);
+  const finalFilename = filename || `query_result_${timestamp}.json`;
+
+  // 触发下载
+  downloadBlob(jsonContent, finalFilename, 'application/json;charset=utf-8');
+}
+```
+
+### 通用下载函数
+
+```typescript
+/**
+ * 使用 Blob 和 URL.createObjectURL 触发文件下载
+ */
+function downloadBlob(content: string, filename: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+
+  document.body.appendChild(link);
+  link.click();
+
+  // 清理
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+```
+
+### 导出按钮组件
+
+```typescript
+// src/components/ExportButtons.tsx
+import { Button, Space } from 'antd';
+import { DownloadOutlined } from '@ant-design/icons';
+import { exportToCSV, exportToJSON } from '../utils/export';
+import type { QueryResult } from '../types';
+
+interface ExportButtonsProps {
+  result: QueryResult | null;
+}
+
+export function ExportButtons({ result }: ExportButtonsProps) {
+  if (!result || result.rowCount === 0) {
+    return null; // 无结果或空结果时不显示
+  }
+
+  return (
+    <Space>
+      <Button
+        icon={<DownloadOutlined />}
+        onClick={() => exportToCSV(result.columns, result.rows)}
+      >
+        导出 CSV
+      </Button>
+      <Button
+        icon={<DownloadOutlined />}
+        onClick={() => exportToJSON(result.rows)}
+      >
+        导出 JSON
+      </Button>
+    </Space>
+  );
+}
+```
+
+### 测试用例
+
+```typescript
+// tests/unit/export.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { exportToCSV, exportToJSON } from '../../src/utils/export';
+
+describe('CSV Export', () => {
+  it('should include UTF-8 BOM', () => {
+    const mockDownload = vi.fn();
+    // ... mock downloadBlob
+    exportToCSV(['name'], [{ name: 'test' }]);
+    expect(mockDownload).toHaveBeenCalledWith(
+      expect.stringMatching(/^\uFEFF/), // BOM
+      expect.any(String),
+      expect.any(String)
+    );
+  });
+
+  it('should escape fields with special characters', () => {
+    const rows = [{ value: 'has,comma' }, { value: 'has"quote' }];
+    // 验证转义逻辑
+  });
+
+  it('should generate correct filename format', () => {
+    // 验证文件名格式: query_result_YYYYMMDD_HHMMSS.csv
+  });
+});
+
+describe('JSON Export', () => {
+  it('should produce valid JSON array', () => {
+    const rows = [{ id: 1, name: '张三' }];
+    // 验证 JSON 格式正确
+  });
+});
+```
+
+### 关键实现要点
+
+| 要点 | 说明 |
+|------|------|
+| UTF-8 BOM | `\uFEFF` 确保 Excel 正确识别编码 |
+| CSV 转义 | 逗号/换行/双引号需用双引号包裹，内部双引号转义为 `""` |
+| 文件名格式 | `query_result_YYYYMMDD_HHMMSS.csv/json` |
+| 空结果处理 | `rowCount === 0` 时禁用导出按钮 |
+| 内存限制 | 最多 1000 行（由查询 LIMIT 保证） |
 
 ---
 
@@ -608,3 +796,4 @@ module.exports = {
 2. **元数据提取**: information_schema 查询 → JSON 序列化 → SQLite 缓存
 3. **自然语言 SQL**: 构建 schema context → OpenAI API (gpt-4o-mini) → 验证生成的 SQL
 4. **前端**: Refine data provider + useCustom → Monaco Editor → Ant Design Table
+5. **结果导出**: 前端 Blob API → CSV (UTF-8 BOM) / JSON → 浏览器下载
