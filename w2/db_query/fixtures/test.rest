@@ -4,6 +4,7 @@
 
 @baseUrl = http://localhost:8000/api/v1
 @dbName = testdb
+@mysqlDbName = mysql_test
 
 ###############################################################################
 # Health Check
@@ -108,12 +109,12 @@ Content-Type: application/json
 # Error Cases (错误场景测试)
 ###############################################################################
 
-### 13. 测试无效的数据库连接 URL
+### 13. 测试无效的数据库连接 URL (不支持的协议)
 PUT {{baseUrl}}/dbs/invaliddb
 Content-Type: application/json
 
 {
-    "url": "mysql://user:pass@localhost/db"
+    "url": "mongodb://user:pass@localhost/db"
 }
 
 ### 14. 测试不存在的数据库连接
@@ -161,3 +162,136 @@ Content-Type: application/json
 
 ### Step 5: 清理 - 删除数据库连接
 DELETE {{baseUrl}}/dbs/mydb
+
+###############################################################################
+# MySQL Database Tests (MySQL 数据库测试)
+# 前置条件: 运行 make db-setup-mysql 创建测试数据库
+###############################################################################
+
+### MySQL-1. 添加 MySQL 数据库连接
+PUT {{baseUrl}}/dbs/{{mysqlDbName}}
+Content-Type: application/json
+
+{
+    "url": "mysql://root@localhost:3306/ecommerce_test"
+}
+
+### MySQL-2. 获取所有数据库连接列表 (应包含 MySQL 连接)
+GET {{baseUrl}}/dbs
+
+### MySQL-3. 获取 MySQL 数据库元数据
+GET {{baseUrl}}/dbs/{{mysqlDbName}}
+
+### MySQL-4. 强制刷新 MySQL 元数据缓存
+GET {{baseUrl}}/dbs/{{mysqlDbName}}?refresh=true
+
+### MySQL-5. 执行 MySQL SELECT 查询 - 获取版本
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT VERSION()"
+}
+
+### MySQL-6. 执行 MySQL SELECT 查询 - 查询用户表
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT * FROM users LIMIT 5"
+}
+
+### MySQL-7. 执行 MySQL SELECT 查询 - 带 JOIN 查询订单
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT o.id, u.username, o.total_amount, o.status FROM orders o JOIN users u ON o.user_id = u.id ORDER BY o.total_amount DESC LIMIT 10"
+}
+
+### MySQL-8. 执行 MySQL SELECT 查询 - 聚合查询
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT status, COUNT(*) as count, SUM(total_amount) as total FROM orders GROUP BY status"
+}
+
+### MySQL-9. 测试 MySQL 非 SELECT 查询被拒绝 (应返回 400 错误)
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query
+Content-Type: application/json
+
+{
+    "sql": "INSERT INTO users (username, email) VALUES ('test', 'test@example.com')"
+}
+
+### MySQL-10. 自然语言生成 MySQL SQL - 查询订单金额最高的用户
+# 注意: 需要设置 OPENAI_API_KEY 环境变量
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "查询订单金额最高的前10个订单及其用户名"
+}
+
+### MySQL-11. 自然语言生成 MySQL SQL - 统计查询
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "统计每种支付方式的订单数量和总金额"
+}
+
+### MySQL-12. 自然语言生成 MySQL SQL - 产品评价
+POST {{baseUrl}}/dbs/{{mysqlDbName}}/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "查询评分最高的5个产品及其平均评分"
+}
+
+### MySQL-13. 删除 MySQL 数据库连接
+DELETE {{baseUrl}}/dbs/{{mysqlDbName}}
+
+###############################################################################
+# MySQL Complete Workflow (MySQL 完整工作流)
+###############################################################################
+
+### MySQL WF-1: 添加数据库
+# @name addMySqlDb
+PUT {{baseUrl}}/dbs/ecommerce
+Content-Type: application/json
+
+{
+    "url": "mysql://root@localhost:3306/ecommerce_test"
+}
+
+### MySQL WF-2: 查看元数据 (应显示 dbType: mysql)
+GET {{baseUrl}}/dbs/ecommerce
+
+### MySQL WF-3: 执行查询 - 查看数据库信息
+POST {{baseUrl}}/dbs/ecommerce/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT DATABASE() as current_db, USER() as current_user, NOW() as current_time"
+}
+
+### MySQL WF-4: 执行查询 - 查看表记录数
+POST {{baseUrl}}/dbs/ecommerce/query
+Content-Type: application/json
+
+{
+    "sql": "SELECT 'users' as table_name, COUNT(*) as row_count FROM users UNION ALL SELECT 'products', COUNT(*) FROM products UNION ALL SELECT 'orders', COUNT(*) FROM orders UNION ALL SELECT 'payments', COUNT(*) FROM payments UNION ALL SELECT 'reviews', COUNT(*) FROM reviews"
+}
+
+### MySQL WF-5: 自然语言查询
+POST {{baseUrl}}/dbs/ecommerce/query/natural
+Content-Type: application/json
+
+{
+    "prompt": "显示最近一周的订单数量和总金额"
+}
+
+### MySQL WF-6: 清理 - 删除数据库连接
+DELETE {{baseUrl}}/dbs/ecommerce

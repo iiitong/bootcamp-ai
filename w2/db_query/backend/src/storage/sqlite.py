@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
 
-from src.models.database import ColumnInfo, DatabaseInfo, DatabaseMetadata, TableInfo
+from src.models.database import ColumnInfo, DatabaseInfo, DatabaseMetadata, DbType, TableInfo
+from src.utils.db_utils import detect_db_type
 
 
 class SQLiteStorage:
@@ -49,16 +50,21 @@ class SQLiteStorage:
                 CREATE TABLE IF NOT EXISTS connections (
                     name TEXT PRIMARY KEY,
                     url TEXT NOT NULL,
+                    db_type TEXT NOT NULL DEFAULT 'postgresql',
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     metadata_cached_at TEXT
                 )
             """)
-            # Migration: add metadata_cached_at column if it doesn't exist
+            # Migration: add missing columns if they don't exist
             cursor = conn.execute("PRAGMA table_info(connections)")
             columns = [row[1] for row in cursor.fetchall()]
             if "metadata_cached_at" not in columns:
                 conn.execute("ALTER TABLE connections ADD COLUMN metadata_cached_at TEXT")
+            if "db_type" not in columns:
+                conn.execute(
+                    "ALTER TABLE connections ADD COLUMN db_type TEXT NOT NULL DEFAULT 'postgresql'"
+                )
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS metadata_cache (
                     connection_name TEXT NOT NULL,
@@ -78,13 +84,14 @@ class SQLiteStorage:
         """List all database connections."""
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT name, url, created_at, updated_at FROM connections ORDER BY name"
+                "SELECT name, url, db_type, created_at, updated_at FROM connections ORDER BY name"
             )
             rows = cursor.fetchall()
             return [
                 DatabaseInfo(
                     name=row["name"],
                     url=self._mask_password(row["url"]),
+                    db_type=row["db_type"],
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"]),
                 )
@@ -95,7 +102,7 @@ class SQLiteStorage:
         """Get a connection by name (includes full URL with password)."""
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT name, url, created_at, updated_at, metadata_cached_at FROM connections WHERE name = ?",
+                "SELECT name, url, db_type, created_at, updated_at, metadata_cached_at FROM connections WHERE name = ?",
                 (name,),
             )
             row = cursor.fetchone()
@@ -104,22 +111,31 @@ class SQLiteStorage:
             return {
                 "name": row["name"],
                 "url": row["url"],
+                "db_type": row["db_type"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "metadata_cached_at": row["metadata_cached_at"],
             }
 
-    def upsert_connection(self, name: str, url: str) -> None:
-        """Insert or update a database connection."""
+    def upsert_connection(self, name: str, url: str, db_type: DbType | None = None) -> None:
+        """Insert or update a database connection.
+
+        Args:
+            name: Connection name
+            url: Database connection URL
+            db_type: Database type (auto-detected from URL if not provided)
+        """
         now = datetime.now(timezone.utc).isoformat()
+        if db_type is None:
+            db_type = detect_db_type(url)
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO connections (name, url, created_at, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(name) DO UPDATE SET url = ?, updated_at = ?
+                INSERT INTO connections (name, url, db_type, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET url = ?, db_type = ?, updated_at = ?
                 """,
-                (name, url, now, now, url, now),
+                (name, url, db_type, now, now, url, db_type, now),
             )
 
     def delete_connection(self, name: str) -> bool:
@@ -162,6 +178,7 @@ class SQLiteStorage:
             return DatabaseMetadata(
                 name=connection_name,
                 url=self._mask_password(conn_data["url"]),
+                db_type=conn_data["db_type"],
                 tables=[],
                 views=[],
                 cached_at=datetime.fromisoformat(metadata_cached_at),
@@ -193,6 +210,7 @@ class SQLiteStorage:
         return DatabaseMetadata(
             name=connection_name,
             url=self._mask_password(conn_data["url"]),
+            db_type=conn_data["db_type"],
             tables=tables,
             views=views,
             cached_at=cached_at or datetime.now(timezone.utc),

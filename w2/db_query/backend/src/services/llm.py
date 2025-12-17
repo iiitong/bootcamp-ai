@@ -16,6 +16,7 @@ class TextToSQLGenerator:
         model: str = "gpt-4o-mini",
         api_key: str | None = None,
         base_url: str | None = None,
+        db_type: str = "postgresql",
     ) -> None:
         """Initialize the generator.
 
@@ -23,12 +24,14 @@ class TextToSQLGenerator:
             model: OpenAI model to use
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
             base_url: Base URL for OpenAI-compatible API (defaults to OPENAI_BASE_URL env var)
+            db_type: Database type ('postgresql' or 'mysql')
         """
         self.client = OpenAI(
             api_key=api_key or os.getenv("OPENAI_API_KEY"),
             base_url=base_url or os.getenv("OPENAI_BASE_URL"),
         )
         self.model = model
+        self.db_type = db_type
         self.schema_context: str | None = None
 
     def set_schema_context(self, tables: list[TableInfo], views: list[TableInfo]) -> None:
@@ -65,6 +68,43 @@ class TextToSQLGenerator:
 
         self.schema_context = "\n".join(lines)
 
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt based on database type.
+
+        Returns:
+            System prompt string for the LLM
+        """
+        schema_info = self.schema_context if self.schema_context else "(No tables or views in this database)"
+
+        if self.db_type == "mysql":
+            return f"""You are a MySQL expert. Generate SQL queries based on natural language descriptions.
+
+Database schema:
+{schema_info}
+
+Rules:
+- Only generate SELECT statements
+- Do not add LIMIT (the system will add it automatically)
+- Return only the SQL code, no explanations
+- Use standard MySQL syntax
+- Use backticks (`) for identifiers if they contain special characters or are reserved words
+- Use MySQL-specific functions: IFNULL instead of COALESCE when appropriate, CONCAT for string concatenation
+- If the request is unclear, make reasonable assumptions based on the schema
+- For date/time functions, use MySQL syntax: NOW(), CURDATE(), DATE_FORMAT(), etc."""
+        else:
+            return f"""You are a PostgreSQL expert. Generate SQL queries based on natural language descriptions.
+
+Database schema:
+{schema_info}
+
+Rules:
+- Only generate SELECT statements
+- Do not add LIMIT (the system will add it automatically)
+- Return only the SQL code, no explanations
+- Use standard PostgreSQL syntax
+- If the request is unclear, make reasonable assumptions based on the schema
+- Always use qualified table names (schema.table) when schema is not 'public'"""
+
     def generate(self, natural_language: str) -> str:
         """Generate SQL from natural language description.
 
@@ -80,20 +120,7 @@ class TextToSQLGenerator:
         if self.schema_context is None:
             raise ValueError("Schema context not set. Call set_schema_context first.")
 
-        schema_info = self.schema_context if self.schema_context else "(No tables or views in this database)"
-
-        system_prompt = f"""You are a PostgreSQL expert. Generate SQL queries based on natural language descriptions.
-
-Database schema:
-{schema_info}
-
-Rules:
-- Only generate SELECT statements
-- Do not add LIMIT (the system will add it automatically)
-- Return only the SQL code, no explanations
-- Use standard PostgreSQL syntax
-- If the request is unclear, make reasonable assumptions based on the schema
-- Always use qualified table names (schema.table) when schema is not 'public'"""
+        system_prompt = self._get_system_prompt()
 
         try:
             response = self.client.chat.completions.create(

@@ -1,0 +1,382 @@
+openapi: 3.1.0
+info:
+  title: DB Query Tool API
+  description: 数据库查询工具 API - 支持 PostgreSQL 和 MySQL
+  version: 1.1.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: 开发服务器
+
+paths:
+  /dbs:
+    get:
+      summary: 列出所有数据库连接
+      operationId: listDatabases
+      tags:
+        - Databases
+      responses:
+        '200':
+          description: 数据库连接列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatabaseInfo'
+
+  /dbs/{name}:
+    put:
+      summary: 添加或更新数据库连接
+      operationId: upsertDatabase
+      tags:
+        - Databases
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$'
+          description: 连接名称（必须以字母开头）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseCreateRequest'
+      responses:
+        '200':
+          description: 连接已添加/更新，返回元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadata'
+        '400':
+          description: 无效的请求（URL 格式错误或名称无效）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: 无法连接到数据库
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: 获取数据库元数据
+      operationId: getDatabase
+      tags:
+        - Databases
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: 是否刷新元数据缓存
+      responses:
+        '200':
+          description: 数据库元数据
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMetadata'
+        '404':
+          description: 连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: 删除数据库连接
+      operationId: deleteDatabase
+      tags:
+        - Databases
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: 连接已删除
+        '404':
+          description: 连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /dbs/{name}/query:
+    post:
+      summary: 执行 SQL 查询
+      operationId: executeQuery
+      tags:
+        - Query
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 数据库连接名称
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: 查询结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+        '400':
+          description: 无效的 SQL（语法错误或非 SELECT 语句）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: 查询超时
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /dbs/{name}/query/natural:
+    post:
+      summary: 自然语言生成 SQL 查询
+      operationId: naturalLanguageQuery
+      tags:
+        - Query
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: 数据库连接名称
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaturalLanguageQueryRequest'
+      responses:
+        '200':
+          description: 生成的 SQL 查询
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NaturalLanguageQueryResult'
+        '400':
+          description: 无效请求或生成失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 连接不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: LLM 服务不可用（未配置 API Key）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    DatabaseCreateRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          description: 数据库连接 URL
+          examples:
+            - 'postgresql://user:pass@localhost:5432/mydb'
+            - 'mysql://root@localhost:3306/testdb'
+          pattern: '^(postgresql|postgres|mysql)://'
+
+    DatabaseInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 连接名称
+        url:
+          type: string
+          description: 连接 URL（密码已掩码）
+        dbType:
+          type: string
+          enum: [postgresql, mysql]
+          description: 数据库类型
+        createdAt:
+          type: string
+          format: date-time
+          description: 创建时间
+        updatedAt:
+          type: string
+          format: date-time
+          description: 更新时间
+
+    DatabaseMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+          description: 连接 URL（密码已掩码）
+        dbType:
+          type: string
+          enum: [postgresql, mysql]
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableInfo'
+        views:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableInfo'
+        cachedAt:
+          type: string
+          format: date-time
+
+    TableInfo:
+      type: object
+      properties:
+        schemaName:
+          type: string
+          description: Schema 名称 (PostgreSQL) 或 Database 名称 (MySQL)
+        name:
+          type: string
+          description: 表/视图名称
+        type:
+          type: string
+          enum: [TABLE, VIEW]
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/ColumnInfo'
+
+    ColumnInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        dataType:
+          type: string
+        nullable:
+          type: boolean
+        defaultValue:
+          type: string
+          nullable: true
+        isPrimaryKey:
+          type: boolean
+        isForeignKey:
+          type: boolean
+
+    QueryRequest:
+      type: object
+      required:
+        - sql
+      properties:
+        sql:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: SQL 查询语句
+
+    QueryResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+          description: 列名列表
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: 数据行
+        rowCount:
+          type: integer
+          description: 返回行数
+        executionTimeMs:
+          type: number
+          description: 执行时间（毫秒）
+
+    NaturalLanguageQueryRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: 自然语言查询描述
+
+    NaturalLanguageQueryResult:
+      type: object
+      properties:
+        generatedSql:
+          type: string
+          description: 生成的 SQL 语句
+        result:
+          $ref: '#/components/schemas/QueryResult'
+          nullable: true
+          description: 执行结果（可选）
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: 错误详情
+        code:
+          type: string
+          enum:
+            - CONNECTION_FAILED
+            - CONNECTION_NOT_FOUND
+            - INVALID_URL
+            - INVALID_SQL
+            - NON_SELECT_QUERY
+            - QUERY_TIMEOUT
+            - LLM_ERROR
+            - LLM_NOT_CONFIGURED
+          description: 错误代码
+
+tags:
+  - name: Databases
+    description: 数据库连接管理
+  - name: Query
+    description: SQL 查询执行

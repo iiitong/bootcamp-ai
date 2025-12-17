@@ -55,3 +55,18 @@ POST /api/v1/dbs/{name}/query/natural
 
 ## 补充功能
 需要增加一个 查询结果导出的功能，查询之后，点击导出按钮，可以选择导出 csv/json 格式文件。
+
+## 添加 MySQL db 支持
+
+参考 ./w2/db_query/backend 中的 PostgreSQL 实现，实现 MySQL 的 metadata 提取和查询支持，同时自然语言生成 sql 也支持 MySQL。另外需要生成一个生成测试数据库和测试数据的文件来进行 mysql 连接、查询的测试，测试 DB 要包含不少于 5 张表，至少一张表要有大于 1000 条的测试数据，使用 `mysql -u root"` 可以访问到我的数据库。
+
+## 更新 make db-setup & 测试 MySQL db 支持
+
+- 把生成的 scripts/setup_mysql_testdb.sql 移动到 fixtures/ 目录下。
+- 现在 make db-setup 没有添加初始化 mysql db 的测试数据，修正一下。
+- 在 ./w2/db_query/fixtures/test.rest 中添加 MySQL db 支持的测试用例，然后运行测试。
+- 如果后端测试 ok，那么打开后端和前端，使用 playwright 测试前端，确保 MySQL db 的基本功能：
+  - 添加 新的数据库 ecommerce_test 为 mysql://root@localhost:3306/ecommerce_test
+  - 生成 sql，查询 ecommerce_test
+
+针对 mysql 支持的测试，也请添加相关的单元测试。

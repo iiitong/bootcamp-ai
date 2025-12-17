@@ -19,12 +19,13 @@ class SQLProcessor:
     BLOCKED_TYPES = (exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.TruncateTable, exp.Create, exp.AlterTable)
 
     @classmethod
-    def process(cls, sql: str, max_limit: int | None = None) -> str:
+    def process(cls, sql: str, max_limit: int | None = None, dialect: str = "postgres") -> str:
         """Process SQL: parse, validate SELECT-only, add LIMIT if missing.
 
         Args:
             sql: Raw SQL query string
             max_limit: Maximum LIMIT to apply (defaults to DEFAULT_LIMIT)
+            dialect: SQL dialect ('postgres' or 'mysql')
 
         Returns:
             Processed SQL string safe for execution
@@ -36,9 +37,9 @@ class SQLProcessor:
         if not sql or not sql.strip():
             raise ValueError("SQL query cannot be empty")
 
-        # 2. Parse with PostgreSQL dialect
+        # 2. Parse with the specified dialect
         try:
-            parsed = sqlglot.parse_one(sql, dialect="postgres")
+            parsed = sqlglot.parse_one(sql, dialect=dialect)
         except ParseError as e:
             raise ValueError(f"SQL syntax error: {e}")
 
@@ -58,8 +59,8 @@ class SQLProcessor:
         if isinstance(parsed, exp.Select) and parsed.find(exp.Limit) is None:
             parsed = parsed.limit(max_limit or cls.DEFAULT_LIMIT)
 
-        # 5. Generate PostgreSQL-compatible SQL
-        return parsed.sql(dialect="postgres")
+        # 5. Generate SQL in the appropriate dialect
+        return parsed.sql(dialect=dialect)
 
     @classmethod
     def validate_only(cls, sql: str) -> bool:
