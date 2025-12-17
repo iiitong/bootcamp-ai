@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Database type literal for type safety
+DbType = Literal["postgresql", "mysql"]
+
 
 def to_camel(string: str) -> str:
     """Convert snake_case to camelCase."""
@@ -17,16 +20,22 @@ class DatabaseCreateRequest(BaseModel):
 
     url: str = Field(
         ...,
-        description="PostgreSQL connection URL",
-        examples=["postgresql://user:pass@localhost:5432/mydb"],
+        description="Database connection URL",
+        examples=[
+            "postgresql://user:pass@localhost:5432/mydb",
+            "mysql://root@localhost:3306/testdb",
+        ],
     )
 
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
-        """Validate that URL starts with postgresql:// or postgres://."""
-        if not v.startswith(("postgresql://", "postgres://")):
-            raise ValueError("URL must start with postgresql:// or postgres://")
+        """Validate that URL starts with supported database prefix."""
+        valid_prefixes = ("postgresql://", "postgres://", "mysql://", "mysql+aiomysql://")
+        if not v.startswith(valid_prefixes):
+            raise ValueError(
+                "URL must start with postgresql://, postgres://, mysql://, or mysql+aiomysql://"
+            )
         return v
 
 
@@ -40,6 +49,7 @@ class DatabaseInfo(BaseModel):
 
     name: str = Field(..., description="Connection name")
     url: str = Field(..., description="Connection URL (password may be hidden)")
+    db_type: DbType = Field(..., description="Database type (postgresql or mysql)")
     created_at: datetime = Field(..., description="Creation time")
     updated_at: datetime = Field(..., description="Last update time")
 
@@ -84,6 +94,7 @@ class DatabaseMetadata(BaseModel):
 
     name: str = Field(..., description="Connection name")
     url: str = Field(..., description="Connection URL")
+    db_type: DbType = Field(..., description="Database type (postgresql or mysql)")
     tables: list[TableInfo] = Field(default_factory=list, description="Table list")
     views: list[TableInfo] = Field(default_factory=list, description="View list")
     cached_at: datetime = Field(..., description="Cache timestamp")

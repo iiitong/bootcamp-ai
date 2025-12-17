@@ -119,3 +119,84 @@ class TestSQLProcessor:
         """validate_only should raise on invalid queries."""
         with pytest.raises(ValueError):
             SQLProcessor.validate_only("DELETE FROM users")
+
+
+class TestSQLProcessorMySQLDialect:
+    """Tests for SQLProcessor with MySQL dialect."""
+
+    def test_mysql_select_query_passes(self) -> None:
+        """SELECT queries should pass validation with MySQL dialect."""
+        sql = "SELECT * FROM users"
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "SELECT" in result.upper()
+
+    def test_mysql_select_adds_limit(self) -> None:
+        """SELECT without LIMIT should have LIMIT 1000 added for MySQL."""
+        sql = "SELECT * FROM users"
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "LIMIT 1000" in result
+
+    def test_mysql_backtick_identifiers(self) -> None:
+        """MySQL backtick identifiers should be preserved."""
+        sql = "SELECT `user-id`, `order-date` FROM `my-table`"
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "`user-id`" in result or "user-id" in result
+
+    def test_mysql_insert_rejected(self) -> None:
+        """INSERT statements should be rejected with MySQL dialect."""
+        sql = "INSERT INTO users (name) VALUES ('test')"
+        with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
+            SQLProcessor.process(sql, dialect="mysql")
+
+    def test_mysql_update_rejected(self) -> None:
+        """UPDATE statements should be rejected with MySQL dialect."""
+        sql = "UPDATE users SET name = 'test' WHERE id = 1"
+        with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
+            SQLProcessor.process(sql, dialect="mysql")
+
+    def test_mysql_delete_rejected(self) -> None:
+        """DELETE statements should be rejected with MySQL dialect."""
+        sql = "DELETE FROM users WHERE id = 1"
+        with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
+            SQLProcessor.process(sql, dialect="mysql")
+
+    def test_mysql_drop_rejected(self) -> None:
+        """DROP statements should be rejected with MySQL dialect."""
+        sql = "DROP TABLE users"
+        with pytest.raises(ValueError, match="Only SELECT queries are allowed"):
+            SQLProcessor.process(sql, dialect="mysql")
+
+    def test_mysql_complex_query(self) -> None:
+        """Complex MySQL queries should work."""
+        sql = """
+        SELECT u.id, u.username, COUNT(o.id) as order_count
+        FROM users u
+        LEFT JOIN orders o ON u.id = o.user_id
+        WHERE u.created_at > '2024-01-01'
+        GROUP BY u.id, u.username
+        HAVING COUNT(o.id) > 5
+        ORDER BY order_count DESC
+        """
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "SELECT" in result.upper()
+        assert "LIMIT 1000" in result
+
+    def test_mysql_subquery(self) -> None:
+        """MySQL subqueries should work."""
+        sql = "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders)"
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "SELECT" in result.upper()
+        assert "LIMIT 1000" in result
+
+    def test_mysql_with_existing_limit(self) -> None:
+        """MySQL SELECT with existing LIMIT should preserve original."""
+        sql = "SELECT * FROM users LIMIT 50"
+        result = SQLProcessor.process(sql, dialect="mysql")
+        assert "LIMIT 50" in result
+        assert "LIMIT 1000" not in result
+
+    def test_mysql_custom_max_limit(self) -> None:
+        """Custom max_limit should work with MySQL dialect."""
+        sql = "SELECT * FROM users"
+        result = SQLProcessor.process(sql, max_limit=100, dialect="mysql")
+        assert "LIMIT 100" in result

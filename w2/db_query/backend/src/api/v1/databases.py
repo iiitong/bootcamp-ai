@@ -10,6 +10,7 @@ from src.models.database import (
     DatabaseCreateRequest,
     DatabaseInfo,
     DatabaseMetadata,
+    TableInfo,
 )
 from src.models.errors import ErrorCode, ErrorResponse
 from src.models.query import (
@@ -20,10 +21,32 @@ from src.models.query import (
 )
 from src.services.llm import TextToSQLGenerator
 from src.services.metadata import MetadataExtractor
+from src.services.metadata_mysql import MySQLMetadataExtractor
 from src.services.query import QueryExecutor, SQLProcessor
+from src.services.query_mysql import MySQLQueryExecutor
 from src.storage.sqlite import SQLiteStorage
+from src.utils.db_utils import detect_db_type
 
 router = APIRouter(prefix="/dbs", tags=["databases"])
+
+
+async def _extract_metadata(url: str, db_type: str) -> tuple[list[TableInfo], list[TableInfo]]:
+    """Extract metadata using the appropriate extractor based on database type.
+
+    Args:
+        url: Database connection URL
+        db_type: Database type ('postgresql' or 'mysql')
+
+    Returns:
+        Tuple of (tables, views) with their column information
+
+    Raises:
+        ConnectionError: If unable to connect to database
+    """
+    if db_type == "mysql":
+        return await MySQLMetadataExtractor.extract(url)
+    else:
+        return await MetadataExtractor.extract(url)
 
 
 def get_storage(settings: Annotated[Settings, Depends(get_settings)]) -> SQLiteStorage:
@@ -73,9 +96,12 @@ async def upsert_database(
             ).model_dump(),
         )
 
+    # Detect database type from URL
+    db_type = detect_db_type(request.url)
+
     # Test connection and extract metadata
     try:
-        tables, views = await MetadataExtractor.extract(request.url)
+        tables, views = await _extract_metadata(request.url, db_type)
     except ConnectionError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -85,8 +111,8 @@ async def upsert_database(
             ).model_dump(),
         )
 
-    # Save connection
-    storage.upsert_connection(name, request.url)
+    # Save connection with db_type
+    storage.upsert_connection(name, request.url, db_type)
 
     # Save metadata cache
     storage.save_metadata(name, tables, views)
@@ -95,6 +121,7 @@ async def upsert_database(
     return DatabaseMetadata(
         name=name,
         url=storage._mask_password(request.url),
+        db_type=db_type,
         tables=tables,
         views=views,
         cached_at=datetime.now(timezone.utc),
@@ -127,14 +154,17 @@ async def get_database_metadata(
             ).model_dump(),
         )
 
+    db_type = conn["db_type"]
+
     # If refresh requested, re-extract metadata and return directly
     if refresh:
         try:
-            tables, views = await MetadataExtractor.extract(conn["url"])
+            tables, views = await _extract_metadata(conn["url"], db_type)
             storage.save_metadata(name, tables, views)
             return DatabaseMetadata(
                 name=name,
                 url=storage._mask_password(conn["url"]),
+                db_type=db_type,
                 tables=tables,
                 views=views,
                 cached_at=datetime.now(timezone.utc),
@@ -153,12 +183,13 @@ async def get_database_metadata(
     if metadata is None:
         # No cached metadata, extract now
         try:
-            tables, views = await MetadataExtractor.extract(conn["url"])
+            tables, views = await _extract_metadata(conn["url"], db_type)
             storage.save_metadata(name, tables, views)
             # Return directly constructed metadata (handles empty database case)
             return DatabaseMetadata(
                 name=name,
                 url=storage._mask_password(conn["url"]),
+                db_type=db_type,
                 tables=tables,
                 views=views,
                 cached_at=datetime.now(timezone.utc),
@@ -231,9 +262,12 @@ async def execute_query(
             ).model_dump(),
         )
 
-    # Process SQL (validate and add LIMIT)
+    db_type = conn["db_type"]
+    dialect = "mysql" if db_type == "mysql" else "postgres"
+
+    # Process SQL (validate and add LIMIT) with appropriate dialect
     try:
-        processed_sql = SQLProcessor.process(request.sql, settings.default_query_limit)
+        processed_sql = SQLProcessor.process(request.sql, settings.default_query_limit, dialect)
     except ValueError as e:
         error_msg = str(e)
         if "Only SELECT" in error_msg or "not permitted" in error_msg:
@@ -245,13 +279,20 @@ async def execute_query(
             detail=ErrorResponse(detail=error_msg, code=code).model_dump(),
         )
 
-    # Execute query
+    # Execute query with appropriate executor
     try:
-        result = await QueryExecutor.execute(
-            conn["url"],
-            processed_sql,
-            settings.query_timeout_seconds,
-        )
+        if db_type == "mysql":
+            result = await MySQLQueryExecutor.execute(
+                conn["url"],
+                processed_sql,
+                settings.query_timeout_seconds,
+            )
+        else:
+            result = await QueryExecutor.execute(
+                conn["url"],
+                processed_sql,
+                settings.query_timeout_seconds,
+            )
     except TimeoutError:
         raise HTTPException(
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
@@ -296,10 +337,10 @@ async def generate_natural_language_query(
     # Check API key
     if not settings.has_openai_key:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=ErrorResponse(
                 detail="OpenAI API key not configured",
-                code=ErrorCode.LLM_ERROR,
+                code=ErrorCode.LLM_NOT_CONFIGURED,
             ).model_dump(),
         )
 
@@ -324,10 +365,12 @@ async def generate_natural_language_query(
             ).model_dump(),
         )
 
-    # Generate SQL
+    # Generate SQL with appropriate database type
+    db_type = conn["db_type"]
     generator = TextToSQLGenerator(
         model=settings.openai_model,
         base_url=settings.openai_base_url,
+        db_type=db_type,
     )
     generator.set_schema_context(metadata.tables, metadata.views)
 

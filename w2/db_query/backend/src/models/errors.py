@@ -15,6 +15,7 @@ class ErrorCode(str, Enum):
     NON_SELECT_QUERY = "NON_SELECT_QUERY"
     QUERY_TIMEOUT = "QUERY_TIMEOUT"
     LLM_ERROR = "LLM_ERROR"
+    LLM_NOT_CONFIGURED = "LLM_NOT_CONFIGURED"
 
 
 class ErrorResponse(BaseModel):

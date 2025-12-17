@@ -111,23 +111,40 @@ build: build-backend build-frontend
 # Database
 #---------------------------------------------------------------------------
 
-## Create test database
+## Create PostgreSQL test database
 db-create:
 	createdb db_query_test || true
 
-## Load test schema
+## Load PostgreSQL test schema
 db-load:
 	psql db_query_test < fixtures/test_schema.sql
 
-## Setup test database (create + load)
-db-setup: db-create db-load
+## Setup PostgreSQL test database (create + load)
+db-setup-pg: db-create db-load
 
-## Drop test database
+## Setup MySQL test database
+db-setup-mysql:
+	mysql -u root < fixtures/setup_mysql_testdb.sql
+
+## Setup all test databases (PostgreSQL + MySQL)
+db-setup: db-setup-pg db-setup-mysql
+
+## Drop PostgreSQL test database
 db-drop:
 	dropdb db_query_test || true
 
-## Reset test database
-db-reset: db-drop db-setup
+## Drop MySQL test database
+db-drop-mysql:
+	mysql -u root -e "DROP DATABASE IF EXISTS ecommerce_test"
+
+## Reset PostgreSQL test database
+db-reset: db-drop db-setup-pg
+
+## Reset MySQL test database
+db-reset-mysql: db-drop-mysql db-setup-mysql
+
+## Reset all test databases
+db-reset-all: db-reset db-reset-mysql
 
 #---------------------------------------------------------------------------
 # Cleanup
