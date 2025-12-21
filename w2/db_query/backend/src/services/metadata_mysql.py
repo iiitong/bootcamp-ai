@@ -1,21 +1,36 @@
 """MySQL metadata extraction service."""
 
-from urllib.parse import urlparse
-
 import aiomysql
 
-from src.models.database import ColumnInfo, TableInfo
+from src.models.database import TableInfo
+from src.services.metadata_base import build_table_hierarchy
+from src.utils.db_utils import parse_mysql_url
 
 
 # SQL queries for MySQL metadata extraction
-MYSQL_TABLES_QUERY = """
+# Base query without db filter - filter is added via parameterized query
+MYSQL_TABLES_QUERY_BASE = """
+SELECT table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+"""
+
+MYSQL_TABLES_QUERY_WITH_DB = """
+SELECT table_schema, table_name, table_type
+FROM information_schema.tables
+WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+  AND table_schema = %s
+ORDER BY table_schema, table_name
+"""
+
+MYSQL_TABLES_QUERY_ALL = """
 SELECT table_schema, table_name, table_type
 FROM information_schema.tables
 WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
 ORDER BY table_schema, table_name
 """
 
-MYSQL_COLUMNS_QUERY = """
+MYSQL_COLUMNS_QUERY_BASE = """
 SELECT
     c.table_schema,
     c.table_name,
@@ -48,33 +63,18 @@ LEFT JOIN (
     AND c.table_name = fk.table_name
     AND c.column_name = fk.column_name
 WHERE c.table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+"""
+
+MYSQL_COLUMNS_QUERY_WITH_DB = MYSQL_COLUMNS_QUERY_BASE + """
+  AND c.table_schema = %s
+ORDER BY c.table_schema, c.table_name, c.ordinal_position
+"""
+
+MYSQL_COLUMNS_QUERY_ALL = MYSQL_COLUMNS_QUERY_BASE + """
 ORDER BY c.table_schema, c.table_name, c.ordinal_position
 """
 
 
-def _parse_mysql_url(url: str) -> dict:
-    """Parse MySQL connection URL into connection parameters.
-
-    Args:
-        url: MySQL connection URL (e.g., 'mysql://user:pass@host:port/database')
-
-    Returns:
-        Dictionary with connection parameters for aiomysql
-    """
-    parsed = urlparse(url)
-
-    # Handle mysql+aiomysql:// scheme
-    scheme = parsed.scheme
-    if scheme == "mysql+aiomysql":
-        scheme = "mysql"
-
-    return {
-        "host": parsed.hostname or "localhost",
-        "port": parsed.port or 3306,
-        "user": parsed.username or "root",
-        "password": parsed.password or "",
-        "db": parsed.path.lstrip("/") if parsed.path else None,
-    }
 
 
 class MySQLMetadataExtractor:
@@ -93,77 +93,38 @@ class MySQLMetadataExtractor:
         Raises:
             ConnectionError: If unable to connect to database
         """
-        params = _parse_mysql_url(connection_url)
+        params = parse_mysql_url(connection_url)
         db_name = params.pop("db")
 
         try:
             conn = await aiomysql.connect(**params)
             try:
                 async with conn.cursor(aiomysql.DictCursor) as cur:
-                    # If specific database requested, filter by it
+                    # Use parameterized queries to prevent SQL injection
                     if db_name:
-                        tables_query = MYSQL_TABLES_QUERY.replace(
-                            "ORDER BY", f"AND table_schema = '{db_name}' ORDER BY"
-                        )
-                        columns_query = MYSQL_COLUMNS_QUERY.replace(
-                            "ORDER BY c.table_schema",
-                            f"AND c.table_schema = '{db_name}' ORDER BY c.table_schema",
-                        )
+                        # Get tables and views with database filter
+                        await cur.execute(MYSQL_TABLES_QUERY_WITH_DB, (db_name,))
+                        table_rows = await cur.fetchall()
+
+                        # Get columns with database filter
+                        await cur.execute(MYSQL_COLUMNS_QUERY_WITH_DB, (db_name,))
+                        column_rows = await cur.fetchall()
                     else:
-                        tables_query = MYSQL_TABLES_QUERY
-                        columns_query = MYSQL_COLUMNS_QUERY
+                        # Get all tables and views
+                        await cur.execute(MYSQL_TABLES_QUERY_ALL)
+                        table_rows = await cur.fetchall()
 
-                    # Get tables and views
-                    await cur.execute(tables_query)
-                    table_rows = await cur.fetchall()
-
-                    # Get columns
-                    await cur.execute(columns_query)
-                    column_rows = await cur.fetchall()
+                        # Get all columns
+                        await cur.execute(MYSQL_COLUMNS_QUERY_ALL)
+                        column_rows = await cur.fetchall()
             finally:
                 conn.close()
 
         except aiomysql.Error as e:
             raise ConnectionError(f"Failed to connect to MySQL database: {e}") from e
 
-        # Organize into hierarchical structure
-        tables: list[TableInfo] = []
-        views: list[TableInfo] = []
-        table_map: dict[tuple[str, str], TableInfo] = {}
-
-        # Create table/view entries
-        # Note: MySQL information_schema returns uppercase column names
-        for row in table_rows:
-            table_type = "VIEW" if row["TABLE_TYPE"] == "VIEW" else "TABLE"
-            table_info = TableInfo(
-                schema_name=row["TABLE_SCHEMA"],
-                name=row["TABLE_NAME"],
-                type=table_type,
-                columns=[],
-            )
-            key = (row["TABLE_SCHEMA"], row["TABLE_NAME"])
-            table_map[key] = table_info
-
-            if table_type == "VIEW":
-                views.append(table_info)
-            else:
-                tables.append(table_info)
-
-        # Add columns to tables/views
-        for row in column_rows:
-            key = (row["TABLE_SCHEMA"], row["TABLE_NAME"])
-            if key in table_map:
-                column = ColumnInfo(
-                    name=row["COLUMN_NAME"],
-                    data_type=row["DATA_TYPE"],
-                    nullable=row["IS_NULLABLE"] == "YES",
-                    default_value=row["COLUMN_DEFAULT"],
-                    is_primary_key=bool(row["is_primary_key"]),
-                    is_foreign_key=bool(row["is_foreign_key"]),
-                )
-                table_map[key].columns.append(column)
-
-        return tables, views
+        # Use shared helper to organize into hierarchical structure
+        return build_table_hierarchy(table_rows, column_rows)
 
     @staticmethod
     async def test_connection(connection_url: str) -> bool:
@@ -178,7 +139,7 @@ class MySQLMetadataExtractor:
         Raises:
             ConnectionError: If unable to connect
         """
-        params = _parse_mysql_url(connection_url)
+        params = parse_mysql_url(connection_url)
         params.pop("db", None)  # Remove db for connection test
 
         try:

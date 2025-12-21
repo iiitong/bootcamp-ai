@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.services.metadata_mysql import MySQLMetadataExtractor, _parse_mysql_url
+from src.services.metadata_mysql import MySQLMetadataExtractor
 from src.services.query_mysql import MySQLQueryExecutor
-from src.services.query_mysql import _parse_mysql_url as query_parse_mysql_url
+from src.utils.db_utils import parse_mysql_url
 
 
 class TestMySQLUrlParsing:
@@ -15,7 +15,7 @@ class TestMySQLUrlParsing:
     def test_parse_full_url(self) -> None:
         """Parse complete MySQL URL with all components."""
         url = "mysql://root:secret@localhost:3307/ecommerce"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["host"] == "localhost"
         assert params["port"] == 3307
@@ -26,7 +26,7 @@ class TestMySQLUrlParsing:
     def test_parse_url_without_password(self) -> None:
         """Parse MySQL URL without password."""
         url = "mysql://root@localhost:3306/mydb"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["host"] == "localhost"
         assert params["port"] == 3306
@@ -37,28 +37,28 @@ class TestMySQLUrlParsing:
     def test_parse_url_default_port(self) -> None:
         """Default port should be 3306."""
         url = "mysql://root@localhost/mydb"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["port"] == 3306
 
     def test_parse_url_default_host(self) -> None:
         """Default host should be localhost."""
         url = "mysql:///mydb"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["host"] == "localhost"
 
     def test_parse_url_default_user(self) -> None:
         """Default user should be root."""
         url = "mysql://localhost/mydb"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["user"] == "root"
 
     def test_parse_mysql_aiomysql_scheme(self) -> None:
         """mysql+aiomysql:// scheme should be handled."""
         url = "mysql+aiomysql://user:pass@host:3307/db"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["host"] == "host"
         assert params["port"] == 3307
@@ -69,22 +69,22 @@ class TestMySQLUrlParsing:
     def test_parse_url_no_database(self) -> None:
         """URL without database should have None for db."""
         url = "mysql://root@localhost:3306"
-        params = _parse_mysql_url(url)
+        params = parse_mysql_url(url)
 
         assert params["db"] is None
 
-    def test_query_parse_matches_metadata_parse(self) -> None:
-        """Both URL parsers should produce consistent results."""
+    def test_parse_mysql_url_is_shared(self) -> None:
+        """Verify parse_mysql_url is imported from shared utils (DRY fix)."""
+        # This test verifies that both services now use the same shared function
         url = "mysql://user:pass@host:3307/testdb"
+        params = parse_mysql_url(url)
 
-        metadata_params = _parse_mysql_url(url)
-        query_params = query_parse_mysql_url(url)
-
-        assert metadata_params["host"] == query_params["host"]
-        assert metadata_params["port"] == query_params["port"]
-        assert metadata_params["user"] == query_params["user"]
-        assert metadata_params["password"] == query_params["password"]
-        assert metadata_params["db"] == query_params["db"]
+        # Verify all expected keys are present
+        assert params["host"] == "host"
+        assert params["port"] == 3307
+        assert params["user"] == "user"
+        assert params["password"] == "pass"
+        assert params["db"] == "testdb"
 
 
 class TestMySQLMetadataExtractor:

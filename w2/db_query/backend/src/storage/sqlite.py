@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Generator
 
 from src.models.database import ColumnInfo, DatabaseInfo, DatabaseMetadata, DbType, TableInfo
-from src.utils.db_utils import detect_db_type
+from src.utils.db_utils import detect_db_type, mask_password
 
 
 class SQLiteStorage:
@@ -90,7 +90,7 @@ class SQLiteStorage:
             return [
                 DatabaseInfo(
                     name=row["name"],
-                    url=self._mask_password(row["url"]),
+                    url=mask_password(row["url"]),
                     db_type=row["db_type"],
                     created_at=datetime.fromisoformat(row["created_at"]),
                     updated_at=datetime.fromisoformat(row["updated_at"]),
@@ -177,7 +177,7 @@ class SQLiteStorage:
         if not rows:
             return DatabaseMetadata(
                 name=connection_name,
-                url=self._mask_password(conn_data["url"]),
+                url=mask_password(conn_data["url"]),
                 db_type=conn_data["db_type"],
                 tables=[],
                 views=[],
@@ -209,7 +209,7 @@ class SQLiteStorage:
 
         return DatabaseMetadata(
             name=connection_name,
-            url=self._mask_password(conn_data["url"]),
+            url=mask_password(conn_data["url"]),
             db_type=conn_data["db_type"],
             tables=tables,
             views=views,
@@ -267,19 +267,6 @@ class SQLiteStorage:
                 (connection_name,),
             )
 
-    @staticmethod
-    def _mask_password(url: str) -> str:
-        """Mask password in connection URL for display."""
-        # Simple password masking: postgresql://user:password@host -> postgresql://user:***@host
-        if "@" in url and ":" in url:
-            # Find the password part between :// and @
-            try:
-                prefix_end = url.index("://") + 3
-                at_pos = url.index("@")
-                user_pass = url[prefix_end:at_pos]
-                if ":" in user_pass:
-                    user, _ = user_pass.split(":", 1)
-                    return url[:prefix_end] + user + ":***" + url[at_pos:]
-            except (ValueError, IndexError):
-                pass
-        return url
+    # Backward compatibility: expose mask_password as static method
+    # New code should import from src.utils.db_utils directly
+    _mask_password = staticmethod(mask_password)

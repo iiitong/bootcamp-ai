@@ -5,8 +5,7 @@
 
 import type { DataProvider } from "@refinedev/core";
 
-// API URL from environment variable, with fallback for development
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+import { API_URL } from "../config/api";
 
 export const dataProvider: DataProvider = {
   getList: async ({ resource }) => {

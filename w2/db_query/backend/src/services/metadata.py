@@ -3,7 +3,8 @@
 import psycopg
 from psycopg.rows import dict_row
 
-from src.models.database import ColumnInfo, TableInfo
+from src.models.database import TableInfo
+from src.services.metadata_base import build_table_hierarchy
 
 
 # SQL queries for metadata extraction
@@ -82,43 +83,8 @@ class MetadataExtractor:
         except psycopg.OperationalError as e:
             raise ConnectionError(f"Failed to connect to database: {e}") from e
 
-        # Organize into hierarchical structure
-        tables: list[TableInfo] = []
-        views: list[TableInfo] = []
-        table_map: dict[tuple[str, str], TableInfo] = {}
-
-        # Create table/view entries
-        for row in table_rows:
-            table_type = "VIEW" if row["table_type"] == "VIEW" else "TABLE"
-            table_info = TableInfo(
-                schema_name=row["table_schema"],
-                name=row["table_name"],
-                type=table_type,
-                columns=[],
-            )
-            key = (row["table_schema"], row["table_name"])
-            table_map[key] = table_info
-
-            if table_type == "VIEW":
-                views.append(table_info)
-            else:
-                tables.append(table_info)
-
-        # Add columns to tables/views
-        for row in column_rows:
-            key = (row["table_schema"], row["table_name"])
-            if key in table_map:
-                column = ColumnInfo(
-                    name=row["column_name"],
-                    data_type=row["data_type"],
-                    nullable=row["is_nullable"] == "YES",
-                    default_value=row["column_default"],
-                    is_primary_key=row["is_primary_key"],
-                    is_foreign_key=row["is_foreign_key"],
-                )
-                table_map[key].columns.append(column)
-
-        return tables, views
+        # Use shared helper to organize into hierarchical structure
+        return build_table_hierarchy(table_rows, column_rows)
 
     @staticmethod
     async def test_connection(connection_url: str) -> bool:

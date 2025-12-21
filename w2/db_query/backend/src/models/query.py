@@ -4,11 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
-def to_camel(string: str) -> str:
-    """Convert snake_case to camelCase."""
-    components = string.split("_")
-    return components[0] + "".join(x.title() for x in components[1:])
+from src.utils.db_utils import to_camel
 
 
 class QueryRequest(BaseModel):

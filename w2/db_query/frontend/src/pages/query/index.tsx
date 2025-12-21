@@ -12,11 +12,10 @@ import { SqlEditor } from "../../components/SqlEditor";
 import { QueryResults } from "../../components/QueryResults";
 import { NaturalLanguageInput } from "../../components/NaturalLanguageInput";
 import { handleApiError } from "../../utils/error";
+import { API_URL } from "../../config/api";
 import type { DatabaseInfo, QueryResult, NaturalLanguageQueryResult } from "../../types";
 
 const { Title, Text } = Typography;
-
-const API_URL = "http://localhost:8000/api/v1";
 
 export function QueryPage() {
   const { dbName: urlDbName } = useParams<{ dbName?: string }>();

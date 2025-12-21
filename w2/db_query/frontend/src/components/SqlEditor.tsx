@@ -7,7 +7,6 @@ interface SqlEditorProps {
   onChange: (value: string) => void;
   readOnly?: boolean;
   height?: string;
-  placeholder?: string;
 }
 
 const editorOptions: editor.IStandaloneEditorConstructionOptions = {

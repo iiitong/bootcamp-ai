@@ -6,11 +6,10 @@ import { PlusOutlined } from "@ant-design/icons";
 
 import { DatabaseList as DatabaseListComponent } from "../../components/DatabaseList";
 import { handleApiError, getErrorMessage } from "../../utils/error";
+import { API_URL } from "../../config/api";
 import type { DatabaseInfo, DatabaseCreateRequest } from "../../types";
 
 const { Text } = Typography;
-
-const API_URL = "http://localhost:8000/api/v1";
 
 export function DatabaseList() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -126,17 +125,17 @@ export function DatabaseList() {
 
           <Form.Item
             name="url"
-            label="PostgreSQL URL"
+            label="Database URL"
             rules={[
               { required: true, message: "Please enter the connection URL" },
               {
-                pattern: /^postgres(ql)?:\/\/.+/,
-                message: "Must be a valid PostgreSQL URL",
+                pattern: /^(postgres(ql)?|mysql(\+aiomysql)?):\/\/.+/,
+                message: "Must be a valid PostgreSQL or MySQL URL",
               },
             ]}
           >
             <Input.Password
-              placeholder="postgresql://user:password@host:5432/dbname"
+              placeholder="postgresql://user:password@host:5432/dbname or mysql://user:password@host:3306/dbname"
               visibilityToggle
             />
           </Form.Item>

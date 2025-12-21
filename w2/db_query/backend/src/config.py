@@ -1,40 +1,68 @@
 """Configuration management for DB Query Tool."""
 
-import os
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
+from typing import Self
+
+from pydantic import Field, computed_field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings:
-    """Application settings loaded from environment variables."""
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables.
 
-    def __init__(self) -> None:
-        # OpenAI API configuration (supports OpenAI-compatible APIs like Amazon Bedrock)
-        self.openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
-        self.openai_base_url: str | None = os.getenv("OPENAI_BASE_URL")
-        self.openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    Supports loading from .env files and environment variables.
+    """
 
-        # Data directory for SQLite storage
-        default_data_dir = Path.home() / ".db_query"
-        self.data_dir: Path = Path(os.getenv("DB_QUERY_DATA_DIR", str(default_data_dir)))
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-        # SQLite database path
-        self.db_path: Path = self.data_dir / "db_query.db"
+    # OpenAI API configuration (supports OpenAI-compatible APIs like Amazon Bedrock)
+    openai_api_key: str = ""
+    openai_base_url: str | None = None
+    openai_model: str = "gpt-4o-mini"
 
-        # Query settings
-        self.default_query_limit: int = int(os.getenv("DB_QUERY_DEFAULT_LIMIT", "1000"))
-        self.query_timeout_seconds: int = int(os.getenv("DB_QUERY_TIMEOUT", "30"))
+    # Data directory for SQLite storage
+    data_dir: Path = Field(
+        default=Path.home() / ".db_query",
+        validation_alias="DB_QUERY_DATA_DIR",
+    )
 
-        # CORS settings
-        # Comma-separated list of allowed origins, or "*" for all (development only)
-        cors_origins_str = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174")
-        self.cors_allowed_origins: list[str] = [
-            origin.strip() for origin in cors_origins_str.split(",") if origin.strip()
-        ]
+    # Query settings
+    default_query_limit: int = Field(
+        default=1000,
+        validation_alias="DB_QUERY_DEFAULT_LIMIT",
+    )
+    query_timeout_seconds: int = Field(
+        default=30,
+        validation_alias="DB_QUERY_TIMEOUT",
+    )
 
-    def ensure_data_dir(self) -> None:
-        """Ensure the data directory exists."""
+    # CORS settings - stored as comma-separated string for env var compatibility
+    cors_origins_str: str = Field(
+        default="http://localhost:5173,http://localhost:5174",
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
+
+    @model_validator(mode="after")
+    def ensure_data_dir_exists(self) -> Self:
+        """Ensure the data directory exists after settings are loaded."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        return self
+
+    @computed_field
+    @property
+    def db_path(self) -> Path:
+        """SQLite database path derived from data_dir."""
+        return self.data_dir / "db_query.db"
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        """CORS allowed origins as a list."""
+        return [origin.strip() for origin in self.cors_origins_str.split(",") if origin.strip()]
 
     @property
     def has_openai_key(self) -> bool:

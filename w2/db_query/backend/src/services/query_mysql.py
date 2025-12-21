@@ -1,31 +1,11 @@
 """MySQL query execution service."""
 
 import time
-from urllib.parse import urlparse
 
 import aiomysql
 
 from src.models.query import QueryResult
-
-
-def _parse_mysql_url(url: str) -> dict:
-    """Parse MySQL connection URL into connection parameters.
-
-    Args:
-        url: MySQL connection URL (e.g., 'mysql://user:pass@host:port/database')
-
-    Returns:
-        Dictionary with connection parameters for aiomysql
-    """
-    parsed = urlparse(url)
-
-    return {
-        "host": parsed.hostname or "localhost",
-        "port": parsed.port or 3306,
-        "user": parsed.username or "root",
-        "password": parsed.password or "",
-        "db": parsed.path.lstrip("/") if parsed.path else None,
-    }
+from src.utils.db_utils import parse_mysql_url
 
 
 class MySQLQueryExecutor:
@@ -52,7 +32,7 @@ class MySQLQueryExecutor:
             TimeoutError: If query exceeds timeout
             Exception: For other execution errors
         """
-        params = _parse_mysql_url(connection_url)
+        params = parse_mysql_url(connection_url)
         start_time = time.perf_counter()
 
         try:

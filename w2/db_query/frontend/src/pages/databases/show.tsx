@@ -27,11 +27,10 @@ import {
 
 import { SchemaTree } from "../../components/SchemaTree";
 import { handleApiError } from "../../utils/error";
+import { API_URL } from "../../config/api";
 import type { DatabaseMetadata } from "../../types";
 
 const { Text } = Typography;
-
-const API_URL = "http://localhost:8000/api/v1";
 
 export function DatabaseShow() {
   const { id: dbName } = useParams<{ id: string }>();
@@ -225,8 +224,8 @@ export function DatabaseShow() {
               tables={metadata.tables}
               views={metadata.views}
               onSelect={(schema, table) => {
-                // Could navigate to table detail or copy to clipboard
-                console.log(`Selected: ${schema}.${table}`);
+                // Navigate to query page with table pre-selected
+                navigate(`/query/${dbName}?table=${schema}.${table}`);
               }}
             />
           </div>

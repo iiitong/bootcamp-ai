@@ -3,10 +3,14 @@
  * Matches backend Pydantic models with camelCase JSON output
  */
 
+// Database type
+export type DbType = "postgresql" | "mysql";
+
 // Database connection info (list view)
 export interface DatabaseInfo {
   name: string;
   url: string;
+  dbType: DbType;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +37,7 @@ export interface TableInfo {
 export interface DatabaseMetadata {
   name: string;
   url: string;
+  dbType: DbType;
   tables: TableInfo[];
   views: TableInfo[];
   cachedAt: string;

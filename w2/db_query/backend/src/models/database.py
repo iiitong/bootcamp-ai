@@ -5,14 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.utils.db_utils import to_camel
+
 # Database type literal for type safety
 DbType = Literal["postgresql", "mysql"]
-
-
-def to_camel(string: str) -> str:
-    """Convert snake_case to camelCase."""
-    components = string.split("_")
-    return components[0] + "".join(x.title() for x in components[1:])
 
 
 class DatabaseCreateRequest(BaseModel):
