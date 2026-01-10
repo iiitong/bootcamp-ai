@@ -1,0 +1,38 @@
+# PostgreSQL MCP Server Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+databases:
+  - name: main
+    host: localhost
+    port: 5432
+    database: mydb
+    user: postgres
+    password: ${PG_PASSWORD}  # Environment variable expansion supported
+    ssl_mode: prefer
+    min_pool_size: 2
+    max_pool_size: 10
+
+  # Alternative: use connection string
+  # - name: production
+  #   connection_string: ${DATABASE_URL}
+
+openai:
+  api_key: ${OPENAI_API_KEY}
+  model: gpt-4o-mini
+  # base_url: https://api.openai.com/v1  # Optional: custom endpoint
+  max_retries: 3
+  timeout: 30.0
+
+server:
+  cache_refresh_interval: 3600  # Schema cache refresh interval in seconds
+  max_result_rows: 1000
+  query_timeout: 30.0
+  enable_result_validation: false
+  max_sql_retry: 2
+  use_readonly_transactions: true  # Deep defense: execute queries in read-only transactions
+
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    requests_per_hour: 1000
+    openai_tokens_per_minute: 100000
