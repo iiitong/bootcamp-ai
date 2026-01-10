@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from pg_mcp.infrastructure.database import DatabasePool
 
 logger = structlog.get_logger(__name__)
+
+# 预编译正则表达式
+INDEX_COLUMNS_PATTERN = re.compile(r'\(([^)]+)\)')
 
 
 # Schema 查询 SQL
@@ -317,9 +321,8 @@ class SchemaCache:
             elif "using brin" in indexdef:
                 index_type = IndexType.BRIN
 
-            # 解析索引列
-            import re
-            columns_match = re.search(r'\(([^)]+)\)', row["indexdef"])
+            # 解析索引列（使用预编译正则）
+            columns_match = INDEX_COLUMNS_PATTERN.search(row["indexdef"])
             columns = []
             if columns_match:
                 columns = [c.strip() for c in columns_match.group(1).split(",")]

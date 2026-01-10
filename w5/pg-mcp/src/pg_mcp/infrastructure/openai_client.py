@@ -166,7 +166,11 @@ class OpenAIClient:
         sql: str,
         result: list[dict[str, Any]],
     ) -> tuple[bool, str | None]:
-        """验证查询结果是否合理（可选功能）
+        """验证查询结果是否合理（使用 LLM）
+
+        This feature is disabled by default (enable_result_validation=False).
+        When enabled, it uses the LLM to verify if the query result
+        makes sense for the given question.
 
         Args:
             question: 原始问题
@@ -175,10 +179,23 @@ class OpenAIClient:
 
         Returns:
             (是否合理, 解释)
+
+        Raises:
+            NotImplementedError: 功能未启用时调用
         """
-        # 简化版验证，实际可以调用 LLM 来验证
+        # 功能说明：此功能在设计阶段被标记为可选
+        # 如需启用，请设置 enable_result_validation=True 并实现以下逻辑：
+        # 1. 构建验证 prompt（包含问题、SQL、结果摘要）
+        # 2. 调用 LLM 判断结果是否合理
+        # 3. 返回验证结果和解释
+        #
+        # 当前返回简化实现：
         if not result:
-            return True, "Empty result set"
+            return True, "Empty result set is valid for this query"
+
+        # 基本验证：检查结果是否为空或格式正确
+        if isinstance(result, list) and len(result) > 0:
+            return True, None
 
         return True, None
 

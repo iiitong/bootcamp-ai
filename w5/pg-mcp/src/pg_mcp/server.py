@@ -18,16 +18,20 @@ from pg_mcp.models import (
     PgMcpError,
     QueryRequest,
     QueryResponse,
-    QueryResult,
     ReturnType,
 )
+from pg_mcp.services.query_service import QueryService, QueryServiceConfig
 from pg_mcp.utils.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
 
 class PgMcpServer:
-    """PostgreSQL MCP Server."""
+    """PostgreSQL MCP Server.
+
+    This class orchestrates all server components and delegates query execution
+    to QueryService to avoid code duplication.
+    """
 
     def __init__(self, config: AppConfig) -> None:
         """Initialize the server.
@@ -42,6 +46,18 @@ class PgMcpServer:
         self._rate_limiter = RateLimiter(config.server.rate_limit)
         self._sql_parser = SQLParser()
         self._logger = logger
+
+        # Create QueryService with all dependencies
+        query_config = QueryServiceConfig.from_server_config(config.server)
+        self._query_service = QueryService(
+            config=query_config,
+            app_config=config,
+            pool_manager=self._pool_manager,
+            schema_cache=self._schema_cache,
+            openai_client=self._openai_client,
+            sql_parser=self._sql_parser,
+            rate_limiter=self._rate_limiter,
+        )
 
     async def startup(self) -> None:
         """Initialize server resources."""
@@ -67,28 +83,6 @@ class PgMcpServer:
         await self._openai_client.close()
         self._logger.info("Server shutdown complete")
 
-    def _resolve_database(self, database: str | None) -> str:
-        """Resolve the target database name.
-
-        Args:
-            database: Requested database name or None for default
-
-        Returns:
-            Resolved database name
-
-        Raises:
-            PgMcpError: If database not found
-        """
-        if database is None:
-            return self.config.get_default_database().name
-
-        db_config = self.config.get_database(database)
-        if db_config is None:
-            from pg_mcp.models.errors import UnknownDatabaseError
-            raise UnknownDatabaseError(database, self.config.database_names)
-
-        return db_config.name
-
     async def get_schema(self, database: str) -> DatabaseSchema:
         """Get database schema.
 
@@ -104,82 +98,15 @@ class PgMcpServer:
     async def execute_query(self, request: QueryRequest) -> QueryResponse:
         """Execute a natural language query.
 
+        Delegates to QueryService to avoid code duplication.
+
         Args:
             request: Query request
 
         Returns:
             Query response
         """
-        # Check rate limit
-        await self._rate_limiter.check_request()
-
-        # Resolve database
-        db_name = self._resolve_database(request.database)
-        pool = self._pool_manager.get_pool(db_name)
-
-        # Get schema
-        schema = await self.get_schema(db_name)
-
-        # Generate SQL
-        sql_result = await self._openai_client.generate_sql(
-            request.question,
-            schema,
-        )
-
-        # Validate SQL
-        self._sql_parser.validate_and_raise(sql_result.sql)
-
-        # Record token usage
-        await self._rate_limiter.record_tokens(sql_result.tokens_used)
-
-        # If only SQL requested, return now
-        if request.return_type == ReturnType.SQL:
-            return QueryResponse(
-                sql=sql_result.sql,
-                explanation=sql_result.explanation,
-            )
-
-        # Execute query
-        limit = request.limit or self.config.server.max_result_rows
-        sql_with_limit = self._sql_parser.add_limit(sql_result.sql, limit + 1)
-
-        try:
-            if self.config.server.use_readonly_transactions:
-                rows = await pool.fetch_readonly(
-                    sql_with_limit,
-                    timeout=self.config.server.query_timeout,
-                )
-            else:
-                rows = await pool.fetch(
-                    sql_with_limit,
-                    timeout=self.config.server.query_timeout,
-                )
-        except TimeoutError as e:
-            from pg_mcp.models.errors import QueryTimeoutError
-            raise QueryTimeoutError(self.config.server.query_timeout) from e
-
-        # Process results
-        truncated = len(rows) > limit
-        if truncated:
-            rows = rows[:limit]
-
-        columns = list(rows[0].keys()) if rows else []
-        result_rows = [list(row.values()) for row in rows]
-
-        result = QueryResult(
-            columns=columns,
-            rows=result_rows,
-            row_count=len(result_rows),
-            truncated=truncated,
-        )
-
-        response = QueryResponse(result=result)
-
-        if request.return_type == ReturnType.BOTH:
-            response.sql = sql_result.sql
-            response.explanation = sql_result.explanation
-
-        return response
+        return await self._query_service.execute_query(request)
 
     def list_databases(self) -> list[str]:
         """List available databases.
@@ -255,11 +182,20 @@ def create_mcp_server(config: AppConfig) -> FastMCP:
             return response.model_dump(exclude_none=True)
         except PgMcpError as e:
             return e.to_response().model_dump()
-        except Exception as e:
-            logger.exception("Unexpected error", error=str(e))
+        except ValueError as e:
+            # Invalid return_type or other validation errors
+            logger.warning("Validation error in query", error=str(e))
             return {
                 "success": False,
-                "error_code": ErrorCode.INTERNAL_ERROR,
+                "error_code": ErrorCode.INVALID_REQUEST.value,
+                "error_message": str(e),
+            }
+        except KeyError as e:
+            # Database not found
+            logger.warning("Database not found", error=str(e))
+            return {
+                "success": False,
+                "error_code": ErrorCode.DATABASE_NOT_FOUND.value,
                 "error_message": str(e),
             }
 
@@ -276,7 +212,14 @@ def create_mcp_server(config: AppConfig) -> FastMCP:
         """
         try:
             if database:
-                db_name = server._resolve_database(database)
+                # Validate database exists
+                db_config = server.config.get_database(database)
+                if db_config is None:
+                    return {
+                        "success": False,
+                        "error": f"Database '{database}' not found",
+                    }
+                db_name = db_config.name
                 pool = server._pool_manager.get_pool(db_name)
                 await server._schema_cache.refresh(db_name, pool)
                 return {"success": True, "databases": [db_name]}
@@ -287,8 +230,10 @@ def create_mcp_server(config: AppConfig) -> FastMCP:
                     await server._schema_cache.refresh(db_name, pool)
                     refreshed.append(db_name)
                 return {"success": True, "databases": refreshed}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except KeyError as e:
+            return {"success": False, "error": f"Database pool not found: {e}"}
+        except ConnectionError as e:
+            return {"success": False, "error": f"Connection error: {e}"}
 
     return mcp
 

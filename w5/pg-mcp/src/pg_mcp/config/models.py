@@ -25,6 +25,16 @@ class DatabaseConfig(BaseModel):
     password: SecretStr | None = None
     ssl_mode: SSLMode = SSLMode.PREFER
 
+    # SSL 证书配置
+    ssl_verify_cert: bool = Field(
+        default=True,
+        description="验证 SSL 证书 (仅 REQUIRE 模式生效)"
+    )
+    ssl_ca_file: str | None = Field(
+        default=None,
+        description="CA 证书文件路径"
+    )
+
     # 方式二：连接字符串
     connection_string: SecretStr | None = None
 

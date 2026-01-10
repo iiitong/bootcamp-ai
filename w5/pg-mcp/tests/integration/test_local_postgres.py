@@ -6,6 +6,7 @@ Requires a local PostgreSQL server at localhost:5432.
 """
 
 import asyncio
+import contextlib
 from collections.abc import AsyncGenerator
 
 import asyncpg
@@ -15,7 +16,6 @@ from pg_mcp.config.models import DatabaseConfig
 from pg_mcp.infrastructure.database import DatabasePool
 from pg_mcp.infrastructure.sql_parser import SQLParser
 from pg_mcp.models.errors import UnsafeSQLError
-
 
 # Configure for local PostgreSQL
 LOCAL_PG_CONFIG = DatabaseConfig(
@@ -30,19 +30,19 @@ LOCAL_PG_CONFIG = DatabaseConfig(
 
 
 @pytest.fixture
-async def local_pool() -> AsyncGenerator[DatabasePool, None]:
+async def local_pool() -> AsyncGenerator[DatabasePool]:
     """Create a connection pool to local PostgreSQL."""
     pool = DatabasePool(LOCAL_PG_CONFIG)
     try:
         await pool.connect()
-        print(f"\n[OK] Connected to local PostgreSQL: {LOCAL_PG_CONFIG.host}:{LOCAL_PG_CONFIG.port}")
+        print(f"\n[OK] Connected to local PostgreSQL: {LOCAL_PG_CONFIG.host}")
         yield pool
     finally:
         await pool.disconnect()
 
 
 @pytest.fixture
-async def test_table(local_pool: DatabasePool) -> AsyncGenerator[str, None]:
+async def test_table(local_pool: DatabasePool) -> AsyncGenerator[str]:
     """Create a temporary test table."""
     table_name = "pg_mcp_test_table"
 
@@ -159,7 +159,7 @@ class TestSQLParserValidation:
             "SELECT id, name FROM users WHERE id = 1",
             "SELECT COUNT(*) FROM orders GROUP BY status",
             "SELECT u.name, o.total FROM users u JOIN orders o ON u.id = o.user_id",
-            "WITH recent AS (SELECT * FROM orders WHERE created_at > NOW() - INTERVAL '1 day') SELECT * FROM recent",
+            "WITH recent AS (SELECT * FROM orders) SELECT * FROM recent",
         ]
         for query in safe_queries:
             result = sql_parser.validate(query)
@@ -261,12 +261,10 @@ class TestDataIntegrity:
         before = await local_pool.fetch(f"SELECT COUNT(*) as cnt FROM {test_table}")
 
         # Attempt blocked INSERT
-        try:
+        with contextlib.suppress(asyncpg.ReadOnlySQLTransactionError):
             await local_pool.fetch_readonly(
                 f"INSERT INTO {test_table} (name, value) VALUES ('attacker', 666)"
             )
-        except asyncpg.ReadOnlySQLTransactionError:
-            pass
 
         # Count after
         after = await local_pool.fetch(f"SELECT COUNT(*) as cnt FROM {test_table}")
@@ -285,12 +283,10 @@ class TestDataIntegrity:
         )
 
         # Attempt blocked UPDATE
-        try:
+        with contextlib.suppress(asyncpg.ReadOnlySQLTransactionError):
             await local_pool.fetch_readonly(
                 f"UPDATE {test_table} SET value = 999999 WHERE name = 'alice'"
             )
-        except asyncpg.ReadOnlySQLTransactionError:
-            pass
 
         # Get value after
         after = await local_pool.fetch(

@@ -12,22 +12,44 @@ from pg_mcp.models.errors import DatabaseConnectionError
 logger = structlog.get_logger(__name__)
 
 
-def create_ssl_context(ssl_mode: SSLMode) -> ssl.SSLContext | bool:
+def create_ssl_context(
+    ssl_mode: SSLMode,
+    verify_cert: bool = True,
+    ca_file: str | None = None,
+) -> ssl.SSLContext | bool:
     """根据 SSL 模式创建 SSL 上下文
 
     Args:
         ssl_mode: SSL 模式配置
+        verify_cert: 是否验证证书 (仅对 REQUIRE 模式有效)
+        ca_file: CA 证书文件路径 (可选)
 
     Returns:
         SSL 上下文或布尔值
     """
     if ssl_mode in (SSLMode.DISABLE, SSLMode.ALLOW):
         return False
-    if ssl_mode in (SSLMode.PREFER, SSLMode.REQUIRE):
+
+    if ssl_mode == SSLMode.PREFER:
+        # PREFER 模式: 尝试 SSL 但不验证证书
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         return ctx
+
+    if ssl_mode == SSLMode.REQUIRE:
+        # REQUIRE 模式: 强制 SSL，默认验证证书
+        ctx = ssl.create_default_context(cafile=ca_file)
+        if verify_cert:
+            # 保持默认的证书验证
+            ctx.check_hostname = True
+            ctx.verify_mode = ssl.CERT_REQUIRED
+        else:
+            # 如果明确禁用验证（不推荐）
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+
     return False
 
 
@@ -55,7 +77,11 @@ class DatabasePool:
             return
 
         try:
-            ssl_context = create_ssl_context(self.config.ssl_mode)
+            ssl_context = create_ssl_context(
+                self.config.ssl_mode,
+                verify_cert=self.config.ssl_verify_cert,
+                ca_file=self.config.ssl_ca_file,
+            )
             self._pool = await asyncpg.create_pool(
                 dsn=self.config.get_dsn(),
                 min_size=self.config.min_pool_size,
