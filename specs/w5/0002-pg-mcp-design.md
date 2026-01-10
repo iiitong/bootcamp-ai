@@ -85,7 +85,7 @@
 
 ```
 pg-mcp/
-├── pyproject.toml                 # 项目配置 (uv/poetry)
+├── pyproject.toml                 # 项目配置 (uv)
 ├── config.example.yaml            # 配置示例
 ├── README.md
 ├── src/
@@ -2553,3 +2553,4 @@ testpaths = ["tests"]
 | 1.0 | 2026-01-10 | 初始设计文档 | - |
 | 1.1 | 2026-01-10 | Code Review 修复: (1) 将 ConnectionError 重命名为 DatabaseConnectionError 避免与内置异常冲突; (2) 修复 SSL 配置使用 SSLContext; (3) 改进全局变量为 AppContext 依赖注入模式; (4) 修复 ENUM 类型查询使用 OID; (5) 添加 View 列信息加载; (6) 添加连接池健康检查功能 | Claude |
 | 1.2 | 2026-01-10 | Codex Review 修复: (1) 修复 SQL EXPLAIN 注入风险，使用只读事务; (2) 将 FORBIDDEN_KEYWORDS 从 MySQL 改为 PostgreSQL 特定关键字; (3) 添加 stacked queries（多语句）攻击检测; (4) 修复 Schema 缓存刷新竞态条件，使用原子交换; (5) 添加初始化失败时的资源清理; (6) 新增速率限制器设计（RateLimiter）及配置 | Claude |
+| 1.3 | 2026-01-10 | 明确使用 uv 作为唯一的 Python 环境管理工具（移除 poetry 备选） | Claude |
