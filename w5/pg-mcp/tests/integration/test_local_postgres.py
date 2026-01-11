@@ -23,7 +23,7 @@ LOCAL_PG_CONFIG = DatabaseConfig(
     host="localhost",
     port=5432,
     database="postgres",  # Use default database
-    user="liheng",
+    user="postgres",
     password=None,  # No password
     ssl_mode="disable",  # Local PostgreSQL typically doesn't use SSL
 )
