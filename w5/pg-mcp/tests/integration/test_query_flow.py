@@ -49,6 +49,7 @@ class TestEndToEndQueryFlow:
             dbname=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,  # type: ignore
+            ssl_mode="disable",  # testcontainers doesn't support SSL
         )
 
     @pytest.fixture
@@ -338,6 +339,7 @@ class TestMultiDatabaseScenario:
                     dbname=postgres_container_1.dbname,
                     user=postgres_container_1.username,
                     password=postgres_container_1.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
                 DatabaseConfig(
                     name="db2",
@@ -346,6 +348,7 @@ class TestMultiDatabaseScenario:
                     dbname=postgres_container_2.dbname,
                     user=postgres_container_2.username,
                     password=postgres_container_2.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
             ],
             openai=OpenAIConfig(
@@ -542,6 +545,7 @@ class TestTimeoutHandling:
                     dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
             ],
             openai=OpenAIConfig(
@@ -551,7 +555,7 @@ class TestTimeoutHandling:
             server=ServerConfig(
                 cache_refresh_interval=3600,
                 max_result_rows=1000,
-                query_timeout=0.001,  # Very short timeout (1ms)
+                query_timeout=1.0,  # Short timeout (1s) for testing
                 use_readonly_transactions=True,
             ),
             rate_limit=RateLimitConfig(enabled=False),
@@ -567,7 +571,7 @@ class TestTimeoutHandling:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            dbname=postgres_container.dbname,
+            database=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )
@@ -656,6 +660,7 @@ class TestRateLimiting:
                     dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
             ],
             openai=OpenAIConfig(
@@ -686,7 +691,7 @@ class TestRateLimiting:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            dbname=postgres_container.dbname,
+            database=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )
@@ -758,6 +763,7 @@ class TestRateLimiting:
                     dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
             ],
             openai=OpenAIConfig(
@@ -827,6 +833,7 @@ class TestMockOpenAIResponses:
                     dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
+                    ssl_mode="disable",
                 ),
             ],
             openai=OpenAIConfig(
@@ -850,7 +857,7 @@ class TestMockOpenAIResponses:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            dbname=postgres_container.dbname,
+            database=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )

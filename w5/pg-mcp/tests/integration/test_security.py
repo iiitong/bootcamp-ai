@@ -53,6 +53,7 @@ class TestSecurityDefenseInDepth:
             dbname=real_db.dbname,
             user=real_db.username,
             password=real_db.password,  # type: ignore
+            ssl_mode="disable",  # testcontainers doesn't support SSL
         )
 
     @pytest.fixture
@@ -668,6 +669,7 @@ class TestDenialOfServicePrevention:
             dbname=real_db.dbname,
             user=real_db.username,
             password=real_db.password,  # type: ignore
+            ssl_mode="disable",  # testcontainers doesn't support SSL
         )
         pool = DatabasePool(config)
         await pool.connect()

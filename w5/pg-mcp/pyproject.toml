@@ -61,3 +61,8 @@ warn_unused_configs = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+# Filter deprecation warning from testcontainers library internals
+# See: https://github.com/testcontainers/testcontainers-python/issues/303
+filterwarnings = [
+    "ignore:The @wait_container_is_ready decorator is deprecated:DeprecationWarning:testcontainers",
+]
