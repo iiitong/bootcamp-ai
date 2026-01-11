@@ -46,7 +46,7 @@ class TestEndToEndQueryFlow:
             name="test_db",
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            database=postgres_container.dbname,
+            dbname=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,  # type: ignore
         )
@@ -126,12 +126,12 @@ class TestEndToEndQueryFlow:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(
-                    enabled=True,
-                    requests_per_minute=60,
-                    requests_per_hour=1000,
-                    openai_tokens_per_minute=100000,
-                ),
+            ),
+            rate_limit=RateLimitConfig(
+                enabled=True,
+                requests_per_minute=60,
+                requests_per_hour=1000,
+                openai_tokens_per_minute=100000,
             ),
         )
 
@@ -335,7 +335,7 @@ class TestMultiDatabaseScenario:
                     name="db1",
                     host=postgres_container_1.get_container_host_ip(),
                     port=int(postgres_container_1.get_exposed_port(5432)),
-                    database=postgres_container_1.dbname,
+                    dbname=postgres_container_1.dbname,
                     user=postgres_container_1.username,
                     password=postgres_container_1.password,  # type: ignore
                 ),
@@ -343,7 +343,7 @@ class TestMultiDatabaseScenario:
                     name="db2",
                     host=postgres_container_2.get_container_host_ip(),
                     port=int(postgres_container_2.get_exposed_port(5432)),
-                    database=postgres_container_2.dbname,
+                    dbname=postgres_container_2.dbname,
                     user=postgres_container_2.username,
                     password=postgres_container_2.password,  # type: ignore
                 ),
@@ -357,8 +357,8 @@ class TestMultiDatabaseScenario:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(enabled=False),
             ),
+            rate_limit=RateLimitConfig(enabled=False),
         )
 
     @pytest.fixture
@@ -539,7 +539,7 @@ class TestTimeoutHandling:
                     name="test_db",
                     host=postgres_container.get_container_host_ip(),
                     port=int(postgres_container.get_exposed_port(5432)),
-                    database=postgres_container.dbname,
+                    dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
                 ),
@@ -553,8 +553,8 @@ class TestTimeoutHandling:
                 max_result_rows=1000,
                 query_timeout=0.001,  # Very short timeout (1ms)
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(enabled=False),
             ),
+            rate_limit=RateLimitConfig(enabled=False),
         )
 
     @pytest.fixture
@@ -567,7 +567,7 @@ class TestTimeoutHandling:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            database=postgres_container.dbname,
+            dbname=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )
@@ -653,7 +653,7 @@ class TestRateLimiting:
                     name="test_db",
                     host=postgres_container.get_container_host_ip(),
                     port=int(postgres_container.get_exposed_port(5432)),
-                    database=postgres_container.dbname,
+                    dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
                 ),
@@ -667,12 +667,12 @@ class TestRateLimiting:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(
-                    enabled=True,
-                    requests_per_minute=3,  # Low limit for testing
-                    requests_per_hour=100,
-                    openai_tokens_per_minute=100000,
-                ),
+            ),
+            rate_limit=RateLimitConfig(
+                enabled=True,
+                requests_per_minute=3,  # Low limit for testing
+                requests_per_hour=100,
+                openai_tokens_per_minute=100000,
             ),
         )
 
@@ -686,7 +686,7 @@ class TestRateLimiting:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            database=postgres_container.dbname,
+            dbname=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )
@@ -755,7 +755,7 @@ class TestRateLimiting:
                     name="test_db",
                     host=postgres_container.get_container_host_ip(),
                     port=int(postgres_container.get_exposed_port(5432)),
-                    database=postgres_container.dbname,
+                    dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
                 ),
@@ -769,8 +769,8 @@ class TestRateLimiting:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(enabled=False),  # Disabled
             ),
+            rate_limit=RateLimitConfig(enabled=False),  # Disabled
         )
 
         mock_response = MagicMock()
@@ -824,7 +824,7 @@ class TestMockOpenAIResponses:
                     name="test_db",
                     host=postgres_container.get_container_host_ip(),
                     port=int(postgres_container.get_exposed_port(5432)),
-                    database=postgres_container.dbname,
+                    dbname=postgres_container.dbname,
                     user=postgres_container.username,
                     password=postgres_container.password,  # type: ignore
                 ),
@@ -838,8 +838,8 @@ class TestMockOpenAIResponses:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,
-                rate_limit=RateLimitConfig(enabled=False),
             ),
+            rate_limit=RateLimitConfig(enabled=False),
         )
 
     @pytest.fixture
@@ -850,7 +850,7 @@ class TestMockOpenAIResponses:
         conn = await asyncpg.connect(
             host=postgres_container.get_container_host_ip(),
             port=int(postgres_container.get_exposed_port(5432)),
-            database=postgres_container.dbname,
+            dbname=postgres_container.dbname,
             user=postgres_container.username,
             password=postgres_container.password,
         )

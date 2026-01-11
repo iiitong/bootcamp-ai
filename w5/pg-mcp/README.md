@@ -45,81 +45,77 @@ uv run python -c "import pg_mcp; print('Installation successful!')"
 
 ## Configuration
 
-### Configuration File
-
-Copy the example configuration file and customize it:
+The server is configured using environment variables with the `PG_MCP_` prefix. Copy `.env.example` and customize it:
 
 ```bash
-cp config.example.yaml config.yaml
+cp .env.example .env
+# Edit .env with your settings
 ```
 
-### Configuration Options
-
-```yaml
-# config.yaml
-databases:
-  # Database connection using individual parameters
-  - name: main                    # Unique identifier for the database
-    host: localhost               # Database host
-    port: 5432                    # Database port
-    database: mydb                # Database name
-    user: postgres                # Database user
-    password: ${PG_PASSWORD}      # Password (supports env var expansion)
-    ssl_mode: prefer              # SSL mode: disable, allow, prefer, require
-    min_pool_size: 2              # Minimum pool connections
-    max_pool_size: 10             # Maximum pool connections
-
-  # Alternative: use connection string
-  # - name: production
-  #   connection_string: ${DATABASE_URL}
-
-openai:
-  api_key: ${OPENAI_API_KEY}      # OpenAI API key (required)
-  model: gpt-4o-mini              # Model to use for SQL generation
-  # base_url: https://api.openai.com/v1  # Custom endpoint (optional)
-  max_retries: 3                  # Max retries for API calls
-  timeout: 30.0                   # Request timeout in seconds
-
-server:
-  cache_refresh_interval: 3600   # Schema cache refresh interval (seconds)
-  max_result_rows: 1000          # Maximum rows to return per query
-  query_timeout: 30.0            # Query execution timeout (seconds)
-  enable_result_validation: false # Validate results against schema
-  max_sql_retry: 2               # Max retries for SQL generation
-  use_readonly_transactions: true # Execute queries in read-only transactions
-
-  rate_limit:
-    enabled: true                 # Enable rate limiting
-    requests_per_minute: 60       # Max requests per minute
-    requests_per_hour: 1000       # Max requests per hour
-    openai_tokens_per_minute: 100000  # Max OpenAI tokens per minute
-```
-
-### Environment Variables
-
-The configuration supports environment variable expansion using `${VAR_NAME}` syntax:
+### Required Environment Variables
 
 ```bash
-# Required
-export OPENAI_API_KEY=sk-your-api-key
+# OpenAI Configuration (required)
+PG_MCP_OPENAI_API_KEY=sk-your-openai-api-key
 
-# Database credentials
-export PG_PASSWORD=your-database-password
+# Database Configuration
+PG_MCP_DATABASE_HOST=localhost
+PG_MCP_DATABASE_PORT=5432
+PG_MCP_DATABASE_DBNAME=mydb
+PG_MCP_DATABASE_USER=postgres
+PG_MCP_DATABASE_PASSWORD=your-password
 
-# Optional: specify config file location
-export PG_MCP_CONFIG=/path/to/config.yaml
+# Alternative: Use connection URL (overrides individual params)
+# PG_MCP_DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 ```
+
+### All Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| **Database** | | |
+| `PG_MCP_DATABASE_NAME` | Database alias for referencing | `main` |
+| `PG_MCP_DATABASE_HOST` | Database host | - |
+| `PG_MCP_DATABASE_PORT` | Database port | `5432` |
+| `PG_MCP_DATABASE_DBNAME` | Database name | - |
+| `PG_MCP_DATABASE_USER` | Database user | - |
+| `PG_MCP_DATABASE_PASSWORD` | Database password | - |
+| `PG_MCP_DATABASE_URL` | Connection URL (overrides above) | - |
+| `PG_MCP_DATABASE_SSL_MODE` | SSL mode: disable/allow/prefer/require | `prefer` |
+| `PG_MCP_DATABASE_MIN_POOL_SIZE` | Minimum pool connections | `2` |
+| `PG_MCP_DATABASE_MAX_POOL_SIZE` | Maximum pool connections | `10` |
+| **OpenAI** | | |
+| `PG_MCP_OPENAI_API_KEY` | OpenAI API key (required) | - |
+| `PG_MCP_OPENAI_MODEL` | Model for SQL generation | `gpt-4o-mini` |
+| `PG_MCP_OPENAI_BASE_URL` | Custom API endpoint | - |
+| `PG_MCP_OPENAI_MAX_RETRIES` | Max API retries | `3` |
+| `PG_MCP_OPENAI_TIMEOUT` | Request timeout (seconds) | `30.0` |
+| **Server** | | |
+| `PG_MCP_SERVER_CACHE_REFRESH_INTERVAL` | Schema cache refresh (seconds) | `3600` |
+| `PG_MCP_SERVER_MAX_RESULT_ROWS` | Max rows to return | `1000` |
+| `PG_MCP_SERVER_QUERY_TIMEOUT` | Query timeout (seconds) | `30.0` |
+| `PG_MCP_SERVER_USE_READONLY_TRANSACTIONS` | Enable read-only mode | `true` |
+| `PG_MCP_SERVER_MAX_SQL_RETRY` | SQL generation retries | `2` |
+| **Rate Limiting** | | |
+| `PG_MCP_RATE_LIMIT_ENABLED` | Enable rate limiting | `true` |
+| `PG_MCP_RATE_LIMIT_REQUESTS_PER_MINUTE` | Max requests/minute | `60` |
+| `PG_MCP_RATE_LIMIT_REQUESTS_PER_HOUR` | Max requests/hour | `1000` |
+| `PG_MCP_RATE_LIMIT_OPENAI_TOKENS_PER_MINUTE` | Max tokens/minute | `100000` |
 
 ## Usage
 
 ### Running the MCP Server
 
 ```bash
-# Run with default config (./config.yaml)
-uv run python -m pg_mcp
+# Set required environment variables
+export PG_MCP_OPENAI_API_KEY=sk-your-api-key
+export PG_MCP_DATABASE_HOST=localhost
+export PG_MCP_DATABASE_DBNAME=mydb
+export PG_MCP_DATABASE_USER=postgres
+export PG_MCP_DATABASE_PASSWORD=your-password
 
-# Run with a specific config file
-PG_MCP_CONFIG=/path/to/config.yaml uv run python -m pg_mcp
+# Run the server
+uv run python -m pg_mcp
 
 # Or use the installed script
 uv run pg-mcp
@@ -266,9 +262,12 @@ Add the following to your Claude Desktop configuration file:
         "pg_mcp"
       ],
       "env": {
-        "PG_MCP_CONFIG": "/path/to/pg-mcp/config.yaml",
-        "OPENAI_API_KEY": "sk-your-openai-api-key",
-        "PG_PASSWORD": "your-database-password"
+        "PG_MCP_OPENAI_API_KEY": "sk-your-openai-api-key",
+        "PG_MCP_DATABASE_HOST": "localhost",
+        "PG_MCP_DATABASE_PORT": "5432",
+        "PG_MCP_DATABASE_DBNAME": "your-database",
+        "PG_MCP_DATABASE_USER": "postgres",
+        "PG_MCP_DATABASE_PASSWORD": "your-password"
       }
     }
   }
@@ -296,21 +295,24 @@ services:
   pg-mcp:
     build: .
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PG_PASSWORD=${PG_PASSWORD}
-      - PG_MCP_CONFIG=/app/config.yaml
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro
+      - PG_MCP_OPENAI_API_KEY=${PG_MCP_OPENAI_API_KEY}
+      - PG_MCP_DATABASE_HOST=postgres
+      - PG_MCP_DATABASE_PORT=5432
+      - PG_MCP_DATABASE_DBNAME=testdb
+      - PG_MCP_DATABASE_USER=postgres
+      - PG_MCP_DATABASE_PASSWORD=${PG_MCP_DATABASE_PASSWORD}
     # For MCP stdio communication
     stdin_open: true
     tty: true
+    depends_on:
+      - postgres
 
   # Optional: local PostgreSQL for testing
   postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_PASSWORD: ${PG_MCP_DATABASE_PASSWORD}
       POSTGRES_DB: testdb
     ports:
       - "5432:5432"
@@ -346,8 +348,8 @@ CMD ["uv", "run", "python", "-m", "pg_mcp"]
 
 ```bash
 # Set environment variables
-export OPENAI_API_KEY=sk-your-api-key
-export PG_PASSWORD=your-password
+export PG_MCP_OPENAI_API_KEY=sk-your-api-key
+export PG_MCP_DATABASE_PASSWORD=your-password
 
 # Build and run
 docker-compose up --build
@@ -360,9 +362,11 @@ docker-compose up -d
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for SQL generation | Yes |
-| `PG_PASSWORD` | PostgreSQL password | Yes |
-| `PG_MCP_CONFIG` | Path to config file | No (default: ./config.yaml) |
+| `PG_MCP_OPENAI_API_KEY` | OpenAI API key | Yes |
+| `PG_MCP_DATABASE_HOST` | PostgreSQL host | Yes |
+| `PG_MCP_DATABASE_DBNAME` | Database name | Yes |
+| `PG_MCP_DATABASE_USER` | Database user | Yes |
+| `PG_MCP_DATABASE_PASSWORD` | Database password | Yes |
 
 ## Security
 

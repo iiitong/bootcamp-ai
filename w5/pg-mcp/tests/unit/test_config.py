@@ -1,17 +1,16 @@
 """Unit tests for configuration module."""
 
-from pathlib import Path
-
 import pytest
-import yaml
 
-from pg_mcp.config.loader import expand_env_vars, load_config, process_config_dict
 from pg_mcp.config.models import (
     DatabaseConfig,
-    OpenAIConfig,
-    RateLimitConfig,
-    ServerConfig,
+    DatabaseSettings,
+    OpenAISettings,
+    RateLimitSettings,
+    ServerSettings,
+    SSLMode,
 )
+from pg_mcp.config.loader import load_config, load_config_from_dict
 
 
 class TestDatabaseConfig:
@@ -23,7 +22,7 @@ class TestDatabaseConfig:
             name="test_db",
             host="localhost",
             port=5432,
-            database="test",
+            dbname="test",
             user="postgres",
             password="secret",  # type: ignore
         )
@@ -35,7 +34,7 @@ class TestDatabaseConfig:
         config = DatabaseConfig(
             name="Test_DB-1",
             host="localhost",
-            database="test",
+            dbname="test",
             user="postgres",
         )
         assert config.name == "test_db-1"  # Lowercased
@@ -46,7 +45,7 @@ class TestDatabaseConfig:
             DatabaseConfig(
                 name="test@db",  # Invalid character
                 host="localhost",
-                database="test",
+                dbname="test",
                 user="postgres",
             )
 
@@ -56,7 +55,7 @@ class TestDatabaseConfig:
             name="test",
             host="localhost",
             port=5432,
-            database="mydb",
+            dbname="mydb",
             user="user",
             password="pass",  # type: ignore
         )
@@ -66,134 +65,198 @@ class TestDatabaseConfig:
         assert "5432" in dsn
         assert "mydb" in dsn
 
-    def test_get_dsn_from_connection_string(self) -> None:
-        """Test DSN from connection string."""
+    def test_get_dsn_from_url(self) -> None:
+        """Test DSN from URL."""
         config = DatabaseConfig(
             name="test",
-            connection_string="postgresql://user:pass@host:5432/db",  # type: ignore
+            url="postgresql://user:pass@host:5432/db",  # type: ignore
         )
         dsn = config.get_dsn()
         assert dsn == "postgresql://user:pass@host:5432/db"
 
 
-class TestOpenAIConfig:
-    """Tests for OpenAIConfig."""
+class TestDatabaseSettings:
+    """Tests for DatabaseSettings from environment variables."""
 
-    def test_defaults(self) -> None:
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading from environment variables."""
+        monkeypatch.setenv("PG_MCP_DATABASE_NAME", "testdb")
+        monkeypatch.setenv("PG_MCP_DATABASE_HOST", "localhost")
+        monkeypatch.setenv("PG_MCP_DATABASE_PORT", "5433")
+        monkeypatch.setenv("PG_MCP_DATABASE_DBNAME", "mydb")
+        monkeypatch.setenv("PG_MCP_DATABASE_USER", "testuser")
+        monkeypatch.setenv("PG_MCP_DATABASE_PASSWORD", "secret")
+
+        settings = DatabaseSettings()
+        assert settings.name == "testdb"
+        assert settings.host == "localhost"
+        assert settings.port == 5433
+        assert settings.dbname == "mydb"
+        assert settings.user == "testuser"
+        assert settings.password is not None
+        assert settings.password.get_secret_value() == "secret"
+
+    def test_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading URL from environment variable."""
+        monkeypatch.setenv("PG_MCP_DATABASE_URL", "postgresql://u:p@h:5/d")
+
+        settings = DatabaseSettings()
+        config = settings.to_database_config()
+        assert config.get_dsn() == "postgresql://u:p@h:5/d"
+
+    def test_ssl_mode_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test SSL mode from environment variable."""
+        monkeypatch.setenv("PG_MCP_DATABASE_SSL_MODE", "require")
+
+        settings = DatabaseSettings()
+        assert settings.ssl_mode == SSLMode.REQUIRE
+
+
+class TestOpenAISettings:
+    """Tests for OpenAISettings."""
+
+    def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test default values."""
-        config = OpenAIConfig(api_key="sk-test")  # type: ignore
+        monkeypatch.setenv("PG_MCP_OPENAI_API_KEY", "sk-test")
+
+        config = OpenAISettings()
         assert config.model == "gpt-4o-mini"
         assert config.max_retries == 3
         assert config.timeout == 30.0
 
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading from environment variables."""
+        monkeypatch.setenv("PG_MCP_OPENAI_API_KEY", "sk-mykey")
+        monkeypatch.setenv("PG_MCP_OPENAI_MODEL", "gpt-4")
+        monkeypatch.setenv("PG_MCP_OPENAI_TIMEOUT", "60.0")
 
-class TestRateLimitConfig:
-    """Tests for RateLimitConfig."""
+        config = OpenAISettings()
+        assert config.api_key.get_secret_value() == "sk-mykey"
+        assert config.model == "gpt-4"
+        assert config.timeout == 60.0
+
+
+class TestRateLimitSettings:
+    """Tests for RateLimitSettings."""
 
     def test_defaults(self) -> None:
         """Test default values."""
-        config = RateLimitConfig()
+        config = RateLimitSettings()
         assert config.enabled is True
         assert config.requests_per_minute == 60
         assert config.requests_per_hour == 1000
 
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading from environment variables."""
+        monkeypatch.setenv("PG_MCP_RATE_LIMIT_ENABLED", "false")
+        monkeypatch.setenv("PG_MCP_RATE_LIMIT_REQUESTS_PER_MINUTE", "120")
 
-class TestServerConfig:
-    """Tests for ServerConfig."""
+        config = RateLimitSettings()
+        assert config.enabled is False
+        assert config.requests_per_minute == 120
+
+
+class TestServerSettings:
+    """Tests for ServerSettings."""
 
     def test_defaults(self) -> None:
         """Test default values."""
-        config = ServerConfig()
+        config = ServerSettings()
         assert config.cache_refresh_interval == 3600
         assert config.max_result_rows == 1000
         assert config.use_readonly_transactions is True
 
+    def test_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading from environment variables."""
+        monkeypatch.setenv("PG_MCP_SERVER_MAX_RESULT_ROWS", "500")
+        monkeypatch.setenv("PG_MCP_SERVER_QUERY_TIMEOUT", "60.0")
+        monkeypatch.setenv("PG_MCP_SERVER_USE_READONLY_TRANSACTIONS", "false")
 
-class TestExpandEnvVars:
-    """Tests for environment variable expansion."""
-
-    def test_expand_simple(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test simple variable expansion."""
-        monkeypatch.setenv("TEST_VAR", "hello")
-        result = expand_env_vars("${TEST_VAR}")
-        assert result == "hello"
-
-    def test_expand_with_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test expansion with default value."""
-        monkeypatch.delenv("UNDEFINED_VAR", raising=False)
-        result = expand_env_vars("${UNDEFINED_VAR:-default}")
-        assert result == "default"
-
-    def test_preserve_undefined(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that undefined vars without default are preserved."""
-        monkeypatch.delenv("UNDEFINED_VAR", raising=False)
-        result = expand_env_vars("${UNDEFINED_VAR}")
-        assert result == "${UNDEFINED_VAR}"
-
-
-class TestProcessConfigDict:
-    """Tests for config dict processing."""
-
-    def test_process_nested(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test processing nested config."""
-        monkeypatch.setenv("DB_HOST", "localhost")
-        monkeypatch.setenv("DB_PASS", "secret")
-
-        config = {
-            "database": {
-                "host": "${DB_HOST}",
-                "password": "${DB_PASS}",
-            }
-        }
-        result = process_config_dict(config)
-        assert result["database"]["host"] == "localhost"
-        assert result["database"]["password"] == "secret"
-
-    def test_process_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test processing list values."""
-        monkeypatch.setenv("DB_NAME", "test")
-
-        config = {
-            "databases": [
-                {"name": "${DB_NAME}"},
-            ]
-        }
-        result = process_config_dict(config)
-        assert result["databases"][0]["name"] == "test"
+        config = ServerSettings()
+        assert config.max_result_rows == 500
+        assert config.query_timeout == 60.0
+        assert config.use_readonly_transactions is False
 
 
 class TestLoadConfig:
     """Tests for config loading."""
 
-    def test_load_from_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test loading config from file."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    def test_load_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test loading complete config from environment variables."""
+        # Database settings
+        monkeypatch.setenv("PG_MCP_DATABASE_NAME", "test")
+        monkeypatch.setenv("PG_MCP_DATABASE_HOST", "localhost")
+        monkeypatch.setenv("PG_MCP_DATABASE_PORT", "5432")
+        monkeypatch.setenv("PG_MCP_DATABASE_DBNAME", "testdb")
+        monkeypatch.setenv("PG_MCP_DATABASE_USER", "postgres")
+        monkeypatch.setenv("PG_MCP_DATABASE_PASSWORD", "pass")
 
-        config_data = {
+        # OpenAI settings
+        monkeypatch.setenv("PG_MCP_OPENAI_API_KEY", "sk-test")
+
+        config = load_config()
+        assert len(config.databases) == 1
+        assert config.databases[0].name == "test"
+        assert config.openai.api_key.get_secret_value() == "sk-test"
+
+    def test_load_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that missing required env vars raise error."""
+        import os
+
+        # Clear all PG_MCP_ environment variables
+        for key in list(os.environ.keys()):
+            if key.startswith("PG_MCP_"):
+                monkeypatch.delenv(key, raising=False)
+
+        with pytest.raises(Exception):  # ValidationError - OpenAI API key required
+            load_config()
+
+
+class TestLoadConfigFromDict:
+    """Tests for loading config from dictionary."""
+
+    def test_load_valid_dict(self) -> None:
+        """Test loading config from a valid dictionary."""
+        config_dict = {
             "databases": [
                 {
                     "name": "test",
                     "host": "localhost",
                     "port": 5432,
-                    "database": "testdb",
+                    "dbname": "testdb",
                     "user": "postgres",
                     "password": "pass",
                 }
             ],
             "openai": {
-                "api_key": "${OPENAI_API_KEY}",
+                "api_key": "sk-test",
             },
         }
 
-        config_file = tmp_path / "config.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f)
-
-        config = load_config(config_file)
+        config = load_config_from_dict(config_dict)
         assert config.databases[0].name == "test"
         assert config.openai.api_key.get_secret_value() == "sk-test"
 
-    def test_load_missing_file(self) -> None:
-        """Test that missing file raises error."""
-        with pytest.raises(FileNotFoundError):
-            load_config("/nonexistent/config.yaml")
+    def test_load_with_server_settings(self) -> None:
+        """Test loading config with server settings."""
+        config_dict = {
+            "databases": [
+                {
+                    "name": "test",
+                    "host": "localhost",
+                    "dbname": "testdb",
+                    "user": "postgres",
+                }
+            ],
+            "openai": {
+                "api_key": "sk-test",
+            },
+            "server": {
+                "max_result_rows": 500,
+                "query_timeout": 45.0,
+            },
+        }
+
+        config = load_config_from_dict(config_dict)
+        assert config.server.max_result_rows == 500
+        assert config.server.query_timeout == 45.0

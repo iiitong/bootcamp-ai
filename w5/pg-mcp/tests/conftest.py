@@ -42,7 +42,7 @@ def sample_database_config() -> DatabaseConfig:
         name="test_db",
         host="localhost",
         port=5432,
-        database="test",
+        dbname="test",
         user="postgres",
         password="password",  # type: ignore
     )
@@ -69,14 +69,13 @@ def sample_rate_limit_config() -> RateLimitConfig:
 
 
 @pytest.fixture
-def sample_server_config(sample_rate_limit_config: RateLimitConfig) -> ServerConfig:
+def sample_server_config() -> ServerConfig:
     """Sample server configuration."""
     return ServerConfig(
         cache_refresh_interval=3600,
         max_result_rows=1000,
         query_timeout=30.0,
         use_readonly_transactions=True,
-        rate_limit=sample_rate_limit_config,
     )
 
 
@@ -85,12 +84,14 @@ def sample_app_config(
     sample_database_config: DatabaseConfig,
     sample_openai_config: OpenAIConfig,
     sample_server_config: ServerConfig,
+    sample_rate_limit_config: RateLimitConfig,
 ) -> AppConfig:
     """Sample application configuration."""
     return AppConfig(
         databases=[sample_database_config],
         openai=sample_openai_config,
         server=sample_server_config,
+        rate_limit=sample_rate_limit_config,
     )
 
 

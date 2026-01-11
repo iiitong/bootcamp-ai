@@ -43,7 +43,7 @@ class PgMcpServer:
         self._pool_manager = DatabasePoolManager()
         self._schema_cache = SchemaCache(config.server.cache_refresh_interval)
         self._openai_client = OpenAIClient(config.openai)
-        self._rate_limiter = RateLimiter(config.server.rate_limit)
+        self._rate_limiter = RateLimiter(config.rate_limit)
         self._sql_parser = SQLParser()
         self._logger = logger
 

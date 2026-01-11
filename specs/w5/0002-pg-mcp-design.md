@@ -27,8 +27,8 @@
 | asyncpg | ^0.29.0 | PostgreSQL 异步驱动 |
 | sqlglot | ^26.0 | SQL 解析与验证 |
 | Pydantic | ^2.10 | 数据模型与验证 |
+| pydantic-settings | ^2.7 | 环境变量配置管理 |
 | openai | ^1.60 | OpenAI API 客户端 |
-| PyYAML | ^6.0 | 配置文件解析 |
 | structlog | ^24.0 | 结构化日志 |
 
 ---
@@ -86,7 +86,7 @@
 ```
 pg-mcp/
 ├── pyproject.toml                 # 项目配置 (uv)
-├── config.example.yaml            # 配置示例
+├── .env.example                   # 环境变量配置示例
 ├── README.md
 ├── src/
 │   └── pg_mcp/
@@ -96,8 +96,8 @@ pg-mcp/
 │       │
 │       ├── config/                # 配置模块
 │       │   ├── __init__.py
-│       │   ├── models.py          # Pydantic 配置模型
-│       │   └── loader.py          # 配置加载器
+│       │   ├── models.py          # Pydantic 配置模型 (pydantic-settings)
+│       │   └── loader.py          # 配置加载器 (环境变量)
 │       │
 │       ├── models/                # 数据模型
 │       │   ├── __init__.py
@@ -142,14 +142,40 @@ pg-mcp/
 
 ## 3. 数据模型设计 (Pydantic)
 
-### 3.1 配置模型
+### 3.1 配置模型 (环境变量驱动)
+
+配置完全通过环境变量管理，使用 `pydantic-settings` 实现。每个配置类有独立的环境变量前缀。
+
+**环境变量示例**:
+```bash
+# 数据库配置 (PG_MCP_DATABASE_*)
+PG_MCP_DATABASE_HOST=localhost
+PG_MCP_DATABASE_PORT=5432
+PG_MCP_DATABASE_DBNAME=mydb
+PG_MCP_DATABASE_USER=postgres
+PG_MCP_DATABASE_PASSWORD=secret
+# 或使用连接字符串
+PG_MCP_DATABASE_URL=postgresql://user:pass@host:5432/db
+
+# OpenAI 配置 (PG_MCP_OPENAI_*)
+PG_MCP_OPENAI_API_KEY=sk-xxx
+PG_MCP_OPENAI_MODEL=gpt-4o-mini
+
+# 服务器配置 (PG_MCP_SERVER_*)
+PG_MCP_SERVER_MAX_RESULT_ROWS=1000
+PG_MCP_SERVER_QUERY_TIMEOUT=30.0
+
+# 速率限制 (PG_MCP_RATE_LIMIT_*)
+PG_MCP_RATE_LIMIT_ENABLED=true
+PG_MCP_RATE_LIMIT_REQUESTS_PER_MINUTE=60
+```
 
 ```python
 # src/pg_mcp/config/models.py
 
 from enum import Enum
 from pydantic import BaseModel, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class SSLMode(str, Enum):
@@ -162,77 +188,79 @@ class SSLMode(str, Enum):
 
 class DatabaseConfig(BaseModel):
     """单个数据库连接配置"""
-    name: str = Field(..., description="数据库别名，用于用户引用")
-
-    # 方式一：分离参数
+    name: str = Field(default="main", description="数据库别名")
     host: str | None = None
     port: int = 5432
-    database: str | None = None
+    dbname: str | None = Field(default=None, description="数据库名称")
     user: str | None = None
     password: SecretStr | None = None
+    url: SecretStr | None = Field(default=None, description="连接字符串")
     ssl_mode: SSLMode = SSLMode.PREFER
-
-    # 方式二：连接字符串
-    connection_string: SecretStr | None = None
-
-    # 连接池配置
     min_pool_size: int = Field(default=2, ge=1, le=20)
     max_pool_size: int = Field(default=10, ge=1, le=100)
 
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        """验证数据库名称格式"""
-        if not v.replace("_", "").replace("-", "").isalnum():
-            raise ValueError("Database name must be alphanumeric with underscores/hyphens")
-        return v.lower()
-
     def get_dsn(self) -> str:
         """获取数据库连接字符串"""
-        if self.connection_string:
-            return self.connection_string.get_secret_value()
-
+        if self.url:
+            return self.url.get_secret_value()
         password = self.password.get_secret_value() if self.password else ""
-        return f"postgresql://{self.user}:{password}@{self.host}:{self.port}/{self.database}"
+        return f"postgresql://{self.user}:{password}@{self.host}:{self.port}/{self.dbname}"
 
 
-class OpenAIConfig(BaseModel):
-    """OpenAI 配置"""
+class DatabaseSettings(BaseSettings):
+    """数据库配置 - 从环境变量读取"""
+    name: str = Field(default="main")
+    host: str | None = None
+    port: int = 5432
+    dbname: str | None = None
+    user: str | None = None
+    password: SecretStr | None = None
+    url: SecretStr | None = None
+    ssl_mode: SSLMode = SSLMode.PREFER
+    min_pool_size: int = Field(default=2)
+    max_pool_size: int = Field(default=10)
+
+    model_config = SettingsConfigDict(env_prefix="PG_MCP_DATABASE_", extra="ignore")
+
+
+class OpenAISettings(BaseSettings):
+    """OpenAI 配置 - 从环境变量读取"""
     api_key: SecretStr = Field(..., description="OpenAI API Key")
-    model: str = Field(default="gpt-4o-mini", description="模型名称")
-    base_url: str | None = Field(default=None, description="自定义 API 地址")
-    max_retries: int = Field(default=3, ge=1, le=10)
-    timeout: float = Field(default=30.0, ge=5.0, le=120.0)
+    model: str = Field(default="gpt-4o-mini")
+    base_url: str | None = None
+    max_retries: int = Field(default=3)
+    timeout: float = Field(default=30.0)
+
+    model_config = SettingsConfigDict(env_prefix="PG_MCP_OPENAI_", extra="ignore")
 
 
-class RateLimitConfig(BaseModel):
-    """速率限制配置"""
-    enabled: bool = Field(default=True, description="是否启用速率限制")
-    requests_per_minute: int = Field(default=60, ge=1, le=1000, description="每分钟最大请求数")
-    requests_per_hour: int = Field(default=1000, ge=1, le=10000, description="每小时最大请求数")
-    openai_tokens_per_minute: int = Field(default=100000, ge=1000, description="OpenAI 每分钟最大 token 数")
+class RateLimitSettings(BaseSettings):
+    """速率限制配置 - 从环境变量读取"""
+    enabled: bool = Field(default=True)
+    requests_per_minute: int = Field(default=60)
+    requests_per_hour: int = Field(default=1000)
+    openai_tokens_per_minute: int = Field(default=100000)
+
+    model_config = SettingsConfigDict(env_prefix="PG_MCP_RATE_LIMIT_", extra="ignore")
 
 
-class ServerConfig(BaseModel):
-    """服务器配置"""
-    cache_refresh_interval: int = Field(default=3600, ge=60, description="Schema 缓存刷新间隔（秒）")
-    max_result_rows: int = Field(default=1000, ge=1, le=10000, description="最大返回行数")
-    query_timeout: float = Field(default=30.0, ge=1.0, le=300.0, description="SQL 执行超时（秒）")
-    enable_result_validation: bool = Field(default=False, description="启用 LLM 结果验证")
-    max_sql_retry: int = Field(default=2, ge=0, le=5, description="SQL 语法错误时最大重试次数")
-    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig, description="速率限制配置")
+class ServerSettings(BaseSettings):
+    """服务器配置 - 从环境变量读取"""
+    cache_refresh_interval: int = Field(default=3600)
+    max_result_rows: int = Field(default=1000)
+    query_timeout: float = Field(default=30.0)
+    use_readonly_transactions: bool = Field(default=True)
+    max_sql_retry: int = Field(default=2)
+
+    model_config = SettingsConfigDict(env_prefix="PG_MCP_SERVER_", extra="ignore")
 
 
-class AppConfig(BaseSettings):
+class AppConfig(BaseModel):
     """应用程序总配置"""
     databases: list[DatabaseConfig] = Field(..., min_length=1)
-    openai: OpenAIConfig
-    server: ServerConfig = Field(default_factory=ServerConfig)
-
-    model_config = {
-        "env_prefix": "PG_MCP_",
-        "env_nested_delimiter": "__",
-    }
+    openai: OpenAISettings
+    server: ServerSettings = Field(default_factory=ServerSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 ```
 
 ### 3.2 Schema 模型
@@ -2057,86 +2085,57 @@ if __name__ == "__main__":
 
 ```python
 # src/pg_mcp/config/loader.py
+"""配置加载器 - 从环境变量加载配置"""
 
-import os
-import re
-from pathlib import Path
-
-import yaml
-
-from pg_mcp.config.models import AppConfig, DatabaseConfig, OpenAIConfig
-
-
-def expand_env_vars(value: str) -> str:
-    """展开环境变量引用 ${VAR_NAME}"""
-    pattern = r'\$\{([^}]+)\}'
-
-    def replacer(match):
-        var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
-
-    return re.sub(pattern, replacer, value)
+from pg_mcp.config.models import (
+    AppConfig,
+    DatabaseConfig,
+    DatabaseSettings,
+    OpenAISettings,
+    RateLimitSettings,
+    ServerSettings,
+)
 
 
-def process_config_dict(data: dict) -> dict:
-    """递归处理配置字典，展开环境变量"""
-    result = {}
-    for key, value in data.items():
-        if isinstance(value, str):
-            result[key] = expand_env_vars(value)
-        elif isinstance(value, dict):
-            result[key] = process_config_dict(value)
-        elif isinstance(value, list):
-            result[key] = [
-                process_config_dict(item) if isinstance(item, dict)
-                else expand_env_vars(item) if isinstance(item, str)
-                else item
-                for item in value
-            ]
-        else:
-            result[key] = value
-    return result
+def load_config() -> AppConfig:
+    """从环境变量加载配置
 
+    使用 pydantic-settings 直接从环境变量读取配置:
+    - PG_MCP_DATABASE_*: 数据库配置
+    - PG_MCP_OPENAI_*: OpenAI 配置
+    - PG_MCP_SERVER_*: 服务器配置
+    - PG_MCP_RATE_LIMIT_*: 速率限制配置
 
-def load_config(config_path: str | None = None) -> AppConfig:
-    """加载配置文件"""
-    # 确定配置文件路径
-    if config_path is None:
-        config_path = os.environ.get("PG_MCP_CONFIG", "config.yaml")
+    Returns:
+        AppConfig: 完整应用配置
 
-    path = Path(config_path)
+    Raises:
+        ValidationError: 必需环境变量缺失或无效
+    """
+    database_settings = DatabaseSettings()
+    openai_settings = OpenAISettings()
+    server_settings = ServerSettings()
+    rate_limit_settings = RateLimitSettings()
 
-    if not path.exists():
-        # 尝试从环境变量构建配置
-        return _load_from_env()
+    # 转换为 DatabaseConfig
+    database_config = DatabaseConfig(
+        name=database_settings.name,
+        host=database_settings.host,
+        port=database_settings.port,
+        dbname=database_settings.dbname,
+        user=database_settings.user,
+        password=database_settings.password,
+        url=database_settings.url,
+        ssl_mode=database_settings.ssl_mode,
+        min_pool_size=database_settings.min_pool_size,
+        max_pool_size=database_settings.max_pool_size,
+    )
 
-    with open(path) as f:
-        raw_config = yaml.safe_load(f)
-
-    # 展开环境变量
-    processed_config = process_config_dict(raw_config)
-
-    return AppConfig(**processed_config)
-
-
-def _load_from_env() -> AppConfig:
-    """从环境变量加载配置"""
-    # 这是一个简化实现，支持单数据库配置
     return AppConfig(
-        databases=[
-            DatabaseConfig(
-                name=os.environ.get("PG_MCP_DB_NAME", "default"),
-                host=os.environ.get("PG_MCP_DB_HOST", "localhost"),
-                port=int(os.environ.get("PG_MCP_DB_PORT", "5432")),
-                database=os.environ.get("PG_MCP_DB_DATABASE", "postgres"),
-                user=os.environ.get("PG_MCP_DB_USER", "postgres"),
-                password=os.environ.get("PG_MCP_DB_PASSWORD", ""),
-            )
-        ],
-        openai=OpenAIConfig(
-            api_key=os.environ["OPENAI_API_KEY"],  # 必需
-            model=os.environ.get("PG_MCP_OPENAI_MODEL", "gpt-4o-mini"),
-        )
+        databases=[database_config],
+        openai=openai_settings,
+        server=server_settings,
+        rate_limit=rate_limit_settings,
     )
 ```
 
@@ -2421,33 +2420,38 @@ class TestQueryFlow:
 
 ## 9. 部署配置
 
-### 9.1 配置文件示例
+### 9.1 环境变量配置示例
 
-```yaml
-# config.yaml
+```bash
+# .env.example - 复制为 .env 并配置
 
-databases:
-  - name: "production"
-    host: "${PG_HOST}"
-    port: 5432
-    database: "${PG_DATABASE}"
-    user: "${PG_USER}"
-    password: "${PG_PASSWORD}"
-    ssl_mode: "require"
-    min_pool_size: 2
-    max_pool_size: 10
+# 数据库配置 (必需)
+PG_MCP_DATABASE_NAME=production
+PG_MCP_DATABASE_HOST=localhost
+PG_MCP_DATABASE_PORT=5432
+PG_MCP_DATABASE_DBNAME=mydb
+PG_MCP_DATABASE_USER=postgres
+PG_MCP_DATABASE_PASSWORD=your_password
+PG_MCP_DATABASE_SSL_MODE=prefer
 
-openai:
-  api_key: "${OPENAI_API_KEY}"
-  model: "gpt-4o-mini"
-  timeout: 30.0
+# 或使用连接字符串
+# PG_MCP_DATABASE_URL=postgresql://user:pass@host:5432/db
 
-server:
-  cache_refresh_interval: 3600
-  max_result_rows: 1000
-  query_timeout: 30.0
-  enable_result_validation: false
-  max_sql_retry: 2
+# OpenAI 配置 (必需)
+PG_MCP_OPENAI_API_KEY=sk-your-api-key
+PG_MCP_OPENAI_MODEL=gpt-4o-mini
+PG_MCP_OPENAI_TIMEOUT=30.0
+
+# 服务器配置 (可选)
+PG_MCP_SERVER_CACHE_REFRESH_INTERVAL=3600
+PG_MCP_SERVER_MAX_RESULT_ROWS=1000
+PG_MCP_SERVER_QUERY_TIMEOUT=30.0
+PG_MCP_SERVER_USE_READONLY_TRANSACTIONS=true
+
+# 速率限制 (可选)
+PG_MCP_RATE_LIMIT_ENABLED=true
+PG_MCP_RATE_LIMIT_REQUESTS_PER_MINUTE=60
+PG_MCP_RATE_LIMIT_REQUESTS_PER_HOUR=1000
 ```
 
 ### 9.2 Docker 配置
@@ -2468,7 +2472,6 @@ COPY src/ ./src/
 
 # 设置环境变量
 ENV PYTHONPATH=/app/src
-ENV PG_MCP_CONFIG=/app/config.yaml
 
 # 入口点
 ENTRYPOINT ["python", "-m", "pg_mcp"]
@@ -2484,8 +2487,12 @@ ENTRYPOINT ["python", "-m", "pg_mcp"]
       "command": "python",
       "args": ["-m", "pg_mcp"],
       "env": {
-        "PG_MCP_CONFIG": "/path/to/config.yaml",
-        "OPENAI_API_KEY": "sk-..."
+        "PG_MCP_OPENAI_API_KEY": "sk-your-api-key",
+        "PG_MCP_DATABASE_HOST": "localhost",
+        "PG_MCP_DATABASE_PORT": "5432",
+        "PG_MCP_DATABASE_DBNAME": "your_database",
+        "PG_MCP_DATABASE_USER": "postgres",
+        "PG_MCP_DATABASE_PASSWORD": "your_password"
       }
     }
   }
@@ -2511,7 +2518,6 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
     "openai>=1.60.0",
-    "pyyaml>=6.0",
     "structlog>=24.0.0",
 ]
 

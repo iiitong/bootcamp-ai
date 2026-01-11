@@ -50,7 +50,7 @@ class TestSecurityDefenseInDepth:
             name="security_test_db",
             host=real_db.get_container_host_ip(),
             port=int(real_db.get_exposed_port(5432)),
-            database=real_db.dbname,
+            dbname=real_db.dbname,
             user=real_db.username,
             password=real_db.password,  # type: ignore
         )
@@ -109,8 +109,8 @@ class TestSecurityDefenseInDepth:
                 max_result_rows=1000,
                 query_timeout=30.0,
                 use_readonly_transactions=True,  # Important for security
-                rate_limit=RateLimitConfig(enabled=False),
             ),
+            rate_limit=RateLimitConfig(enabled=False),
         )
 
     @pytest.fixture
@@ -665,7 +665,7 @@ class TestDenialOfServicePrevention:
             name="dos_test",
             host=real_db.get_container_host_ip(),
             port=int(real_db.get_exposed_port(5432)),
-            database=real_db.dbname,
+            dbname=real_db.dbname,
             user=real_db.username,
             password=real_db.password,  # type: ignore
         )

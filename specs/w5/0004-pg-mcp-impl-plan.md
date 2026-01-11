@@ -23,9 +23,8 @@
 | asyncpg | ^0.29.0 | PostgreSQL 异步驱动 |
 | sqlglot | ^26.0 | SQL 解析与验证 |
 | Pydantic | ^2.10 | 数据模型与验证 |
-| pydantic-settings | ^2.7 | 配置管理 |
+| pydantic-settings | ^2.7 | 环境变量配置管理 |
 | openai | ^1.60 | OpenAI API 客户端 |
-| PyYAML | ^6.0 | 配置文件解析 |
 | structlog | ^24.0 | 结构化日志 |
 
 ### 1.3 环境管理 (uv)
@@ -118,7 +117,7 @@ pg-mcp/
 ├── uv.lock                   # 依赖锁定文件
 ├── .python-version           # Python 版本指定
 ├── README.md
-├── config.example.yaml
+├── .env.example              # 环境变量配置示例
 ├── src/
 │   └── pg_mcp/
 │       ├── __init__.py
@@ -171,7 +170,6 @@ pg-mcp/
        "pydantic>=2.10.0",
        "pydantic-settings>=2.7.0",
        "openai>=1.60.0",
-       "pyyaml>=6.0",
        "structlog>=24.0.0",
    ]
 
@@ -222,7 +220,7 @@ pg-mcp/
 
 5. 创建所有目录结构和 `__init__.py` 文件
 
-6. 创建 `config.example.yaml` 示例配置文件
+6. 创建 `.env.example` 环境变量配置示例文件
 
 7. 编写基础 README.md
 
@@ -836,13 +834,13 @@ async with conn.transaction(readonly=True):
 
    # 设置环境变量
    ENV PYTHONPATH=/app/src
-   ENV PG_MCP_CONFIG=/app/config.yaml
 
    # 入口点
    ENTRYPOINT ["uv", "run", "python", "-m", "pg_mcp"]
    ```
 
 2. 编写 docker-compose.yaml (包含测试 PostgreSQL)
+   - 使用环境变量配置 (PG_MCP_DATABASE_*, PG_MCP_OPENAI_* 等)
 
 3. 编写 .dockerignore
 
