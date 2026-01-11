@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "pg-mcp": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "pg_mcp"
+      ]
+    }
+  }
+}
