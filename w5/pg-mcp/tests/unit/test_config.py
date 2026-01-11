@@ -199,7 +199,7 @@ class TestLoadConfig:
         assert config.databases[0].name == "test"
         assert config.openai.api_key.get_secret_value() == "sk-test"
 
-    def test_load_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_load_missing_required(self, monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
         """Test that missing required env vars raise error."""
         import os
 
@@ -208,8 +208,14 @@ class TestLoadConfig:
             if key.startswith("PG_MCP_"):
                 monkeypatch.delenv(key, raising=False)
 
-        with pytest.raises(Exception):  # ValidationError - OpenAI API key required
-            load_config()
+        # Change to a temp directory without .env file to prevent auto-loading
+        original_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            with pytest.raises(Exception):  # ValidationError - OpenAI API key required
+                load_config()
+        finally:
+            os.chdir(original_cwd)
 
 
 class TestLoadConfigFromDict:

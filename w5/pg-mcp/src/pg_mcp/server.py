@@ -126,7 +126,6 @@ def create_mcp_server(config: AppConfig) -> FastMCP:
     Returns:
         Configured FastMCP server
     """
-    mcp = FastMCP("PostgreSQL MCP Server")
     server = PgMcpServer(config)
 
     @asynccontextmanager
@@ -138,7 +137,7 @@ def create_mcp_server(config: AppConfig) -> FastMCP:
         finally:
             await server.shutdown()
 
-    mcp.settings.lifespan = lifespan
+    mcp = FastMCP("PostgreSQL MCP Server", lifespan=lifespan)
 
     @mcp.resource("databases://list")
     async def list_databases() -> str:

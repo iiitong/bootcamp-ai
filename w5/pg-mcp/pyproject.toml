@@ -12,6 +12,7 @@ dependencies = [
     "openai>=2.15.0",
     "pyyaml>=6.0.3",
     "structlog>=25.5.0",
+    "httpx[socks]>=0.28.1",
 ]
 
 [project.optional-dependencies]

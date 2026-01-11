@@ -108,6 +108,7 @@ class OpenAISettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PG_MCP_OPENAI_",
+        env_file=".env",
         extra="ignore",
     )
 
@@ -123,6 +124,7 @@ class RateLimitSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PG_MCP_RATE_LIMIT_",
+        env_file=".env",
         extra="ignore",
     )
 
@@ -142,6 +144,7 @@ class ServerSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PG_MCP_SERVER_",
+        env_file=".env",
         extra="ignore",
     )
 
@@ -163,6 +166,7 @@ class DatabaseSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PG_MCP_DATABASE_",
+        env_file=".env",
         extra="ignore",
     )
 
