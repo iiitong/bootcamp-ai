@@ -17,6 +17,15 @@ class ErrorCode(str, Enum):
     RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
+    # Phase A.1: 访问控制相关错误码
+    ACCESS_DENIED = "ACCESS_DENIED"  # 通用访问拒绝
+    TABLE_ACCESS_DENIED = "TABLE_ACCESS_DENIED"  # 表访问被拒绝
+    COLUMN_ACCESS_DENIED = "COLUMN_ACCESS_DENIED"  # 列访问被拒绝
+    SCHEMA_ACCESS_DENIED = "SCHEMA_ACCESS_DENIED"  # Schema 访问被拒绝
+    QUERY_TOO_EXPENSIVE = "QUERY_TOO_EXPENSIVE"  # 查询成本超限
+    SEQ_SCAN_DENIED = "SEQ_SCAN_DENIED"  # 顺序扫描被拒绝
+    CONFIGURATION_ERROR = "CONFIGURATION_ERROR"  # 配置错误
+
 
 class ErrorResponse(BaseModel):
     """错误响应"""

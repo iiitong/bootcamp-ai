@@ -17,9 +17,15 @@ from pg_mcp.config.models import (
     ServerSettings,
     SSLMode,
 )
+from pg_mcp.config.validators import (
+    ConfigValidator,
+    ValidationResult,
+    validate_config_command,
+)
 
 __all__ = [
     "AppConfig",
+    "ConfigValidator",
     "DatabaseConfig",
     "DatabaseSettings",
     "OpenAIConfig",
@@ -29,6 +35,8 @@ __all__ = [
     "ServerConfig",
     "ServerSettings",
     "SSLMode",
+    "ValidationResult",
     "load_config",
     "load_config_from_dict",
+    "validate_config_command",
 ]

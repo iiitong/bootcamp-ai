@@ -217,3 +217,171 @@ class TestSQLParserNormalize:
         result = sql_parser.normalize("select   *   from   users   where   id=1")
         assert "SELECT" in result
         assert "FROM" in result
+
+
+class TestSQLParserParseForPolicy:
+    """Tests for parse_for_policy method (access policy validation)."""
+
+    def test_basic_select_with_columns(self, sql_parser: SQLParser) -> None:
+        """Test basic SELECT with explicit columns."""
+        result = sql_parser.parse_for_policy(
+            "SELECT u.id, u.name FROM users u WHERE u.id = 1"
+        )
+        assert result.is_readonly
+        assert result.error_message is None
+        assert "users" in result.tables
+        assert ("users", "id") in result.columns
+        assert ("users", "name") in result.columns
+        assert not result.has_select_star
+        assert result.schemas == ["public"]
+
+    def test_select_star_single_table(self, sql_parser: SQLParser) -> None:
+        """Test SELECT * from single table."""
+        result = sql_parser.parse_for_policy("SELECT * FROM orders")
+        assert result.has_select_star
+        assert "orders" in result.select_star_tables
+        assert "orders" in result.tables
+
+    def test_select_star_with_join(self, sql_parser: SQLParser) -> None:
+        """Test SELECT * from joined tables."""
+        result = sql_parser.parse_for_policy(
+            "SELECT * FROM users u JOIN orders o ON u.id = o.user_id"
+        )
+        assert result.has_select_star
+        assert "users" in result.select_star_tables
+        assert "orders" in result.select_star_tables
+
+    def test_table_star_syntax(self, sql_parser: SQLParser) -> None:
+        """Test table.* syntax (e.g., u.*)."""
+        result = sql_parser.parse_for_policy(
+            "SELECT u.*, o.total FROM users u JOIN orders o ON u.id = o.user_id"
+        )
+        assert result.has_select_star
+        assert "users" in result.select_star_tables
+        # orders should NOT be in select_star_tables since we used o.total, not o.*
+        assert "orders" not in result.select_star_tables
+
+    def test_schema_prefix(self, sql_parser: SQLParser) -> None:
+        """Test SELECT with schema prefix."""
+        result = sql_parser.parse_for_policy(
+            "SELECT id, amount FROM sales.orders WHERE status = 'completed'"
+        )
+        assert "sales" in result.schemas
+        assert "orders" in result.tables
+
+    def test_multi_schema_query(self, sql_parser: SQLParser) -> None:
+        """Test query with multiple schemas."""
+        result = sql_parser.parse_for_policy(
+            "SELECT a.id, b.name FROM public.users a "
+            "JOIN analytics.events b ON a.id = b.user_id"
+        )
+        assert "public" in result.schemas
+        assert "analytics" in result.schemas
+        assert "users" in result.tables
+        assert "events" in result.tables
+
+    def test_default_schema_public(self, sql_parser: SQLParser) -> None:
+        """Test that default schema is 'public' when not specified."""
+        result = sql_parser.parse_for_policy("SELECT id FROM users")
+        assert result.schemas == ["public"]
+
+    def test_join_with_aliases(self, sql_parser: SQLParser) -> None:
+        """Test JOIN with table aliases resolves correctly."""
+        result = sql_parser.parse_for_policy(
+            "SELECT u.id, u.name, o.total "
+            "FROM users u "
+            "JOIN orders o ON u.id = o.user_id"
+        )
+        assert "users" in result.tables
+        assert "orders" in result.tables
+        # Columns should reference actual table names, not aliases
+        assert ("users", "id") in result.columns
+        assert ("users", "name") in result.columns
+        assert ("orders", "total") in result.columns
+
+    def test_unsafe_sql_delete(self, sql_parser: SQLParser) -> None:
+        """Test that DELETE is detected as non-readonly."""
+        result = sql_parser.parse_for_policy("DELETE FROM users WHERE id = 1")
+        assert not result.is_readonly
+        assert result.error_message is not None
+        assert "not allowed" in result.error_message.lower()
+
+    def test_unsafe_sql_insert(self, sql_parser: SQLParser) -> None:
+        """Test that INSERT is detected as non-readonly."""
+        result = sql_parser.parse_for_policy(
+            "INSERT INTO users (name) VALUES ('test')"
+        )
+        assert not result.is_readonly
+
+    def test_unsafe_sql_update(self, sql_parser: SQLParser) -> None:
+        """Test that UPDATE is detected as non-readonly."""
+        result = sql_parser.parse_for_policy(
+            "UPDATE users SET name = 'test' WHERE id = 1"
+        )
+        assert not result.is_readonly
+
+    def test_syntax_error(self, sql_parser: SQLParser) -> None:
+        """Test that syntax errors are captured."""
+        result = sql_parser.parse_for_policy("SELECT FROM")
+        assert not result.is_readonly
+        assert result.error_message is not None
+
+    def test_columns_without_table_prefix(self, sql_parser: SQLParser) -> None:
+        """Test columns without explicit table prefix."""
+        result = sql_parser.parse_for_policy(
+            "SELECT id, name, email FROM users WHERE active = true"
+        )
+        # Columns without table prefix should have empty string for table
+        assert ("", "id") in result.columns
+        assert ("", "name") in result.columns
+        assert ("", "email") in result.columns
+        assert ("", "active") in result.columns
+
+    def test_mixed_columns_with_and_without_prefix(
+        self, sql_parser: SQLParser
+    ) -> None:
+        """Test mix of columns with and without table prefix."""
+        result = sql_parser.parse_for_policy(
+            "SELECT u.id, name FROM users u WHERE active = true"
+        )
+        assert ("users", "id") in result.columns
+        assert ("", "name") in result.columns
+        assert ("", "active") in result.columns
+
+    def test_subquery(self, sql_parser: SQLParser) -> None:
+        """Test subquery table extraction."""
+        result = sql_parser.parse_for_policy(
+            "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders)"
+        )
+        assert "users" in result.tables
+        assert "orders" in result.tables
+        assert result.has_select_star
+
+    def test_cte_query(self, sql_parser: SQLParser) -> None:
+        """Test CTE (WITH clause) table extraction."""
+        result = sql_parser.parse_for_policy(
+            "WITH active_users AS (SELECT * FROM users WHERE active = true) "
+            "SELECT * FROM active_users"
+        )
+        assert "users" in result.tables
+        assert result.has_select_star
+
+    def test_empty_result_for_no_statement(self, sql_parser: SQLParser) -> None:
+        """Test handling of empty/whitespace SQL."""
+        result = sql_parser.parse_for_policy("")
+        assert not result.is_readonly
+        assert result.error_message is not None
+
+    def test_dangerous_function_detected(self, sql_parser: SQLParser) -> None:
+        """Test that dangerous functions are detected."""
+        result = sql_parser.parse_for_policy("SELECT pg_sleep(10)")
+        assert not result.is_readonly
+        assert "pg_sleep" in result.error_message.lower()
+
+    def test_stacked_queries_detected(self, sql_parser: SQLParser) -> None:
+        """Test that stacked queries are detected."""
+        result = sql_parser.parse_for_policy(
+            "SELECT * FROM users; DROP TABLE users"
+        )
+        assert not result.is_readonly
+        assert "multiple statements" in result.error_message.lower()

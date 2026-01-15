@@ -45,14 +45,177 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class SSLMode(str, Enum):
     """PostgreSQL SSL 模式"""
+
     DISABLE = "disable"
     ALLOW = "allow"
     PREFER = "prefer"
     REQUIRE = "require"
 
 
+class OnDeniedAction(str, Enum):
+    """敏感列访问时的处理策略"""
+
+    REJECT = "reject"  # 拒绝查询
+    FILTER = "filter"  # 自动过滤（需 SQL 重写）
+
+
+class SelectStarPolicy(str, Enum):
+    """SELECT * 处理策略"""
+
+    REJECT = "reject"  # 包含敏感列时拒绝
+    EXPAND_SAFE = "expand_safe"  # 展开为安全列
+
+
+class TableAccessConfig(BaseModel):
+    """表访问控制配置"""
+
+    allowed: list[str] = Field(
+        default_factory=list, description="允许访问的表白名单（优先级高于黑名单）"
+    )
+    denied: list[str] = Field(default_factory=list, description="禁止访问的表黑名单")
+
+    @field_validator("allowed", "denied")
+    @classmethod
+    def normalize_table_names(cls, v: list[str]) -> list[str]:
+        """标准化表名（小写）"""
+        return [name.lower() for name in v]
+
+
+class ColumnAccessConfig(BaseModel):
+    """列访问控制配置"""
+
+    denied: list[str] = Field(
+        default_factory=list, description="禁止访问的列列表，格式: table.column"
+    )
+    denied_patterns: list[str] = Field(
+        default_factory=list, description="禁止访问的列模式，如 *._password*"
+    )
+    on_denied: OnDeniedAction = Field(
+        default=OnDeniedAction.REJECT, description="访问敏感列时的处理策略"
+    )
+    select_star_policy: SelectStarPolicy = Field(
+        default=SelectStarPolicy.REJECT, description="SELECT * 处理策略"
+    )
+
+    @field_validator("denied")
+    @classmethod
+    def validate_column_format(cls, v: list[str]) -> list[str]:
+        """验证列格式必须为 table.column"""
+        for col in v:
+            if "." not in col:
+                raise ValueError(f"Column '{col}' must be in 'table.column' format")
+        return [c.lower() for c in v]
+
+
+class ExplainPolicyConfig(BaseModel):
+    """EXPLAIN 策略配置"""
+
+    enabled: bool = Field(default=True, description="是否启用 EXPLAIN 检查")
+    max_estimated_rows: int = Field(default=100000, ge=1000, description="最大估算行数")
+    max_estimated_cost: float = Field(default=10000.0, ge=100, description="最大估算成本")
+    deny_seq_scan_on_large_tables: bool = Field(default=True, description="是否禁止大表全表扫描")
+    large_table_threshold: int = Field(default=10000, ge=1000, description="大表行数阈值")
+    timeout_seconds: float = Field(default=5.0, ge=1.0, le=30.0, description="EXPLAIN 执行超时")
+    cache_ttl_seconds: int = Field(default=60, ge=10, description="EXPLAIN 结果缓存 TTL")
+    cache_max_size: int = Field(default=1000, ge=100, description="缓存最大条目数")
+
+
+class AccessPolicyConfig(BaseModel):
+    """数据库访问策略配置"""
+
+    allowed_schemas: list[str] = Field(default=["public"], description="允许访问的 Schema 列表")
+    tables: TableAccessConfig = Field(default_factory=TableAccessConfig)
+    columns: ColumnAccessConfig = Field(default_factory=ColumnAccessConfig)
+    explain_policy: ExplainPolicyConfig = Field(default_factory=ExplainPolicyConfig)
+
+    def validate_consistency(self) -> list[str]:
+        """
+        验证配置一致性，返回警告列表
+
+        Raises:
+            ValueError: 存在配置冲突时
+        """
+        warnings = []
+
+        # 检查表配置冲突
+        table_conflicts = set(self.tables.allowed) & set(self.tables.denied)
+        if table_conflicts:
+            raise ValueError(f"Tables in both allowed and denied lists: {table_conflicts}")
+
+        # 检查过于宽泛的列模式
+        for pattern in self.columns.denied_patterns:
+            if pattern.count("*") > 2:
+                warnings.append(f"Column pattern '{pattern}' may match too broadly")
+
+        return warnings
+
+
+class MetricsConfig(BaseModel):
+    """指标配置（预留给 Phase C）"""
+
+    enabled: bool = Field(default=False, description="是否启用指标暴露")
+    port: int = Field(default=9090, ge=1024, le=65535, description="指标端口")
+    path: str = Field(default="/metrics", description="指标路径")
+
+
+class TracingConfig(BaseModel):
+    """追踪配置（预留给 Phase C）"""
+
+    enabled: bool = Field(default=False, description="是否启用追踪")
+    endpoint: str | None = Field(default=None, description="追踪上报端点")
+    sample_rate: float = Field(default=0.1, ge=0.0, le=1.0, description="采样率")
+    exporter: str = Field(default="otlp", description="追踪导出器类型 (otlp, jaeger, zipkin)")
+    service_name: str = Field(default="pg-mcp", description="服务名称")
+
+    @field_validator("exporter")
+    @classmethod
+    def validate_exporter(cls, v: str) -> str:
+        """验证导出器类型"""
+        valid_exporters = {"otlp", "jaeger", "zipkin"}
+        if v.lower() not in valid_exporters:
+            raise ValueError(f"exporter must be one of {valid_exporters}")
+        return v.lower()
+
+
+class LoggingConfig(BaseModel):
+    """日志配置（预留给 Phase C）"""
+
+    level: str = Field(default="INFO", description="日志级别")
+    format: str = Field(default="json", description="日志格式 (json/text)")
+    slow_query_threshold: float = Field(default=5.0, ge=0.1, description="慢查询阈值（秒）")
+
+
+class ObservabilityConfig(BaseModel):
+    """可观测性配置（预留给 Phase C）"""
+
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)
+    tracing: TracingConfig = Field(default_factory=TracingConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+
+class AuditConfig(BaseModel):
+    """审计日志配置"""
+
+    enabled: bool = Field(default=True, description="是否启用审计日志")
+    storage: str = Field(default="file", description="存储类型 (file/stdout/database)")
+    file_path: str | None = Field(default=None, description="日志文件路径（storage=file 时使用）")
+    max_size_mb: int = Field(default=100, ge=10, description="单个日志文件最大大小 (MB)")
+    max_files: int = Field(default=10, ge=1, description="最大日志文件数")
+    redact_sql: bool = Field(default=False, description="是否脱敏 SQL 中的字面量")
+
+    @field_validator("storage")
+    @classmethod
+    def validate_storage(cls, v: str) -> str:
+        """验证存储类型"""
+        valid_types = {"file", "stdout", "database"}
+        if v.lower() not in valid_types:
+            raise ValueError(f"storage must be one of {valid_types}")
+        return v.lower()
+
+
 class DatabaseConfig(BaseModel):
     """单个数据库连接配置"""
+
     name: str = Field(default="main", description="数据库别名，用于用户引用")
 
     # 方式一：分离参数
@@ -64,14 +227,8 @@ class DatabaseConfig(BaseModel):
     ssl_mode: SSLMode = SSLMode.PREFER
 
     # SSL 证书配置
-    ssl_verify_cert: bool = Field(
-        default=True,
-        description="验证 SSL 证书 (仅 REQUIRE 模式生效)"
-    )
-    ssl_ca_file: str | None = Field(
-        default=None,
-        description="CA 证书文件路径"
-    )
+    ssl_verify_cert: bool = Field(default=True, description="验证 SSL 证书 (仅 REQUIRE 模式生效)")
+    ssl_ca_file: str | None = Field(default=None, description="CA 证书文件路径")
 
     # 方式二：连接字符串
     url: SecretStr | None = Field(default=None, description="数据库连接字符串")
@@ -79,6 +236,11 @@ class DatabaseConfig(BaseModel):
     # 连接池配置
     min_pool_size: int = Field(default=2, ge=1, le=20)
     max_pool_size: int = Field(default=10, ge=1, le=100)
+
+    # 访问策略配置
+    access_policy: AccessPolicyConfig = Field(
+        default_factory=AccessPolicyConfig, description="数据库访问策略配置"
+    )
 
     @field_validator("name")
     @classmethod
@@ -100,6 +262,7 @@ class DatabaseConfig(BaseModel):
 
 class OpenAISettings(BaseSettings):
     """OpenAI 配置 - 从环境变量读取"""
+
     api_key: SecretStr = Field(..., description="OpenAI API Key")
     model: str = Field(default="gpt-4o-mini", description="模型名称")
     base_url: str | None = Field(default=None, description="自定义 API 地址")
@@ -115,6 +278,7 @@ class OpenAISettings(BaseSettings):
 
 class RateLimitSettings(BaseSettings):
     """速率限制配置 - 从环境变量读取"""
+
     enabled: bool = Field(default=True, description="是否启用速率限制")
     requests_per_minute: int = Field(default=60, ge=1, le=1000, description="每分钟最大请求数")
     requests_per_hour: int = Field(default=1000, ge=1, le=10000, description="每小时最大请求数")
@@ -131,6 +295,7 @@ class RateLimitSettings(BaseSettings):
 
 class ServerSettings(BaseSettings):
     """服务器配置 - 从环境变量读取"""
+
     cache_refresh_interval: int = Field(
         default=3600, ge=60, description="Schema 缓存刷新间隔（秒）"
     )
@@ -151,6 +316,7 @@ class ServerSettings(BaseSettings):
 
 class DatabaseSettings(BaseSettings):
     """数据库配置 - 从环境变量读取"""
+
     name: str = Field(default="main", description="数据库别名")
     host: str | None = Field(default=None, description="数据库主机")
     port: int = Field(default=5432, description="数据库端口")
@@ -200,10 +366,19 @@ class AppConfig(BaseModel):
     This is the main configuration class that aggregates all settings.
     It can be created either from environment variables or manually.
     """
+
     databases: list[DatabaseConfig] = Field(..., min_length=1)
     openai: OpenAISettings
     server: ServerSettings = Field(default_factory=ServerSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+
+    # 审计配置
+    audit: AuditConfig = Field(default_factory=AuditConfig, description="审计日志配置")
+
+    # 可观测性配置（预留给 Phase C）
+    observability: ObservabilityConfig = Field(
+        default_factory=ObservabilityConfig, description="可观测性配置"
+    )
 
     def get_database(self, name: str) -> DatabaseConfig | None:
         """根据名称获取数据库配置"""

@@ -1,10 +1,45 @@
 import re
+from dataclasses import dataclass, field
 
 import sqlglot
 from sqlglot import exp
 
 from pg_mcp.models.errors import SQLSyntaxError, UnsafeSQLError
 from pg_mcp.models.query import SQLValidationResult
+
+
+@dataclass
+class ParsedSQLInfo:
+    """
+    SQL 解析结果 (用于访问策略验证)
+
+    扩展现有 SQLParser，在验证 SQL 安全性的同时提取结构化信息。
+    """
+
+    # 原始 SQL
+    sql: str
+
+    # 访问的 Schema 列表 (默认 "public" 如果未指定)
+    schemas: list[str] = field(default_factory=lambda: ["public"])
+
+    # 访问的表列表 (不含 schema 前缀)
+    tables: list[str] = field(default_factory=list)
+
+    # 访问的列列表: [(table, column), ...]
+    columns: list[tuple[str, str]] = field(default_factory=list)
+
+    # 是否包含 SELECT *
+    has_select_star: bool = False
+
+    # SELECT * 涉及的表 (用于列展开)
+    select_star_tables: list[str] = field(default_factory=list)
+
+    # 是否为只读查询 (现有功能)
+    is_readonly: bool = True
+
+    # 验证错误信息 (现有功能)
+    error_message: str | None = None
+
 
 # 禁止的语句类型
 FORBIDDEN_STATEMENT_TYPES: set[type[exp.Expression]] = {
@@ -223,7 +258,7 @@ class SQLParser:
             错误消息或 None
         """
         for func in stmt.find_all(exp.Func):
-            func_name = func.name.lower() if hasattr(func, 'name') else str(func.key).lower()
+            func_name = func.name.lower() if hasattr(func, "name") else str(func.key).lower()
             if func_name in FORBIDDEN_FUNCTIONS:
                 return f"Dangerous function '{func_name}' is not allowed"
         return None
@@ -374,3 +409,199 @@ class SQLParser:
             return sql
         except Exception:
             return sql
+
+    def parse_for_policy(self, sql: str) -> ParsedSQLInfo:
+        """解析 SQL 用于策略验证
+
+        提取 SQL 中的 schema、表、列信息，检测 SELECT * 模式，
+        并验证是否为只读查询。
+
+        Args:
+            sql: SQL 语句
+
+        Returns:
+            ParsedSQLInfo: 包含解析结果的数据结构
+        """
+        result = ParsedSQLInfo(sql=sql)
+
+        # 1. 解析 SQL
+        try:
+            statements = self.parse(sql)
+        except SQLSyntaxError as e:
+            result.error_message = str(e.message)
+            result.is_readonly = False
+            return result
+
+        if not statements:
+            result.error_message = "No valid SQL statement found"
+            result.is_readonly = False
+            return result
+
+        # 只处理第一条语句
+        stmt = statements[0]
+
+        # 2. 检查是否为只读查询
+        validation = self.validate(sql)
+        result.is_readonly = validation.is_safe
+        if not validation.is_safe:
+            result.error_message = validation.error_message
+
+        # 3. 提取 schema 列表
+        result.schemas = self._extract_schemas(stmt)
+
+        # 4. 提取表列表（不含 schema 前缀）
+        result.tables = self._extract_tables_without_schema(stmt)
+
+        # 5. 提取列及其所属表
+        result.columns = self._extract_columns_with_tables(stmt)
+
+        # 6. 检测 SELECT *
+        has_star, star_tables = self._detect_select_star(stmt)
+        result.has_select_star = has_star
+        result.select_star_tables = star_tables
+
+        return result
+
+    def _extract_schemas(self, ast: exp.Expression) -> list[str]:
+        """从 AST 提取 schema 名称
+
+        Args:
+            ast: 解析后的 AST
+
+        Returns:
+            schema 名称列表（去重）
+        """
+        schemas: set[str] = set()
+
+        for table in ast.find_all(exp.Table):
+            # sqlglot 中 table.db 表示 schema
+            schema = table.db
+            if schema:
+                schemas.add(schema.lower())
+
+        # 如果没有显式指定 schema，默认为 public
+        if not schemas:
+            return ["public"]
+
+        return list(schemas)
+
+    def _extract_tables_without_schema(self, ast: exp.Expression) -> list[str]:
+        """提取表名（不含 schema 前缀）
+
+        Args:
+            ast: 解析后的 AST
+
+        Returns:
+            表名列表（去重）
+        """
+        tables: set[str] = set()
+
+        for table in ast.find_all(exp.Table):
+            name = table.name
+            if name:
+                tables.add(name.lower())
+
+        return list(tables)
+
+    def _extract_columns_with_tables(self, ast: exp.Expression) -> list[tuple[str, str]]:
+        """从 AST 提取列和其所属表
+
+        对于有明确表前缀的列（如 t.id），提取表名和列名。
+        对于无表前缀的列，尝试从上下文推断或标记为空字符串。
+
+        Args:
+            ast: 解析后的 AST
+
+        Returns:
+            列列表，格式为 [(table, column), ...]
+        """
+        columns: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        # 构建别名到实际表名的映射
+        alias_map = self._build_table_alias_map(ast)
+
+        for column in ast.find_all(exp.Column):
+            col_name = column.name
+            if not col_name:
+                continue
+
+            # 获取表引用（可能是别名），解析为实际表名
+            table_ref = column.table
+            actual_table = alias_map.get(table_ref.lower(), table_ref.lower()) if table_ref else ""
+
+            pair = (actual_table, col_name.lower())
+            if pair not in seen:
+                seen.add(pair)
+                columns.append(pair)
+
+        return columns
+
+    def _build_table_alias_map(self, ast: exp.Expression) -> dict[str, str]:
+        """构建表别名到实际表名的映射
+
+        Args:
+            ast: 解析后的 AST
+
+        Returns:
+            别名到表名的映射字典
+        """
+        alias_map: dict[str, str] = {}
+
+        for table in ast.find_all(exp.Table):
+            table_name = table.name
+            if not table_name:
+                continue
+
+            table_name_lower = table_name.lower()
+
+            # 检查是否有别名
+            alias = table.alias
+            if alias:
+                alias_map[alias.lower()] = table_name_lower
+            else:
+                # 表名本身也作为键（用于无别名的情况）
+                alias_map[table_name_lower] = table_name_lower
+
+        return alias_map
+
+    def _detect_select_star(self, ast: exp.Expression) -> tuple[bool, list[str]]:
+        """检测 SELECT * 及涉及的表
+
+        Args:
+            ast: 解析后的 AST
+
+        Returns:
+            元组 (是否包含 SELECT *, 涉及的表列表)
+        """
+        has_select_star = False
+        star_tables: list[str] = []
+        seen_tables: set[str] = set()
+
+        # 构建别名映射
+        alias_map = self._build_table_alias_map(ast)
+
+        # 查找所有 Star 表达式
+        for star in ast.find_all(exp.Star):
+            has_select_star = True
+
+            # 检查是否是 table.* 形式
+            parent = star.parent
+            if isinstance(parent, exp.Column) and parent.table:
+                # 有表限定符的 *
+                table_ref = parent.table.lower()
+                actual_table = alias_map.get(table_ref, table_ref)
+                if actual_table not in seen_tables:
+                    seen_tables.add(actual_table)
+                    star_tables.append(actual_table)
+            else:
+                # 裸 SELECT *，涉及所有 FROM 中的表
+                for table in ast.find_all(exp.Table):
+                    table_name = table.name
+                    if table_name:
+                        table_name_lower = table_name.lower()
+                        if table_name_lower not in seen_tables:
+                            seen_tables.add(table_name_lower)
+                            star_tables.append(table_name_lower)
+
+        return has_select_star, star_tables
