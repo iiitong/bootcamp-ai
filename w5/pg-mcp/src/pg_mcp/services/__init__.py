@@ -6,6 +6,11 @@ from pg_mcp.services.query_executor_manager import (
     QueryExecutorManager,
 )
 from pg_mcp.services.query_service import QueryService, QueryServiceConfig
+from pg_mcp.services.result_validator import (
+    ResultValidator,
+    ResultValidatorConfig,
+    ValidationResult,
+)
 
 __all__ = [
     "AmbiguousDatabaseError",
@@ -14,4 +19,7 @@ __all__ = [
     "QueryExecutorManager",
     "QueryService",
     "QueryServiceConfig",
+    "ResultValidator",
+    "ResultValidatorConfig",
+    "ValidationResult",
 ]

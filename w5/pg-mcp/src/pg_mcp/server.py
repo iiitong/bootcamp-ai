@@ -1,5 +1,7 @@
 """FastMCP server implementation for PostgreSQL MCP Server."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -7,6 +9,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from pg_mcp.config import AppConfig, load_config
+from pg_mcp.config.models import AuditConfig
 from pg_mcp.infrastructure.database import DatabasePoolManager
 from pg_mcp.infrastructure.openai_client import OpenAIClient
 from pg_mcp.infrastructure.rate_limiter import RateLimiter
@@ -20,6 +23,10 @@ from pg_mcp.models import (
     QueryResponse,
     ReturnType,
 )
+from pg_mcp.observability.metrics import MetricsCollector
+from pg_mcp.observability.metrics_server import MetricsServer
+from pg_mcp.security.audit_logger import AuditLogger, AuditStorage
+from pg_mcp.services.query_executor_manager import QueryExecutorManager
 from pg_mcp.services.query_service import QueryService, QueryServiceConfig
 from pg_mcp.utils.logging import get_logger, setup_logging
 
@@ -47,6 +54,14 @@ class PgMcpServer:
         self._sql_parser = SQLParser()
         self._logger = logger
 
+        # Initialize observability components
+        self._metrics_collector = self._create_metrics_collector(config)
+        self._metrics_server: MetricsServer | None = None
+        self._audit_logger = self._create_audit_logger(config.audit)
+
+        # Initialize query executor manager (will be populated during startup)
+        self._executor_manager: QueryExecutorManager | None = None
+
         # Create QueryService with all dependencies
         query_config = QueryServiceConfig.from_server_config(config.server)
         self._query_service = QueryService(
@@ -57,6 +72,53 @@ class PgMcpServer:
             openai_client=self._openai_client,
             sql_parser=self._sql_parser,
             rate_limiter=self._rate_limiter,
+            metrics_collector=self._metrics_collector,
+            audit_logger=self._audit_logger,
+            # executor_manager will be set during startup after pools are initialized
+        )
+
+    def _create_metrics_collector(self, config: AppConfig) -> MetricsCollector | None:
+        """Create metrics collector if enabled in config.
+
+        Args:
+            config: Application configuration
+
+        Returns:
+            MetricsCollector instance or None if disabled
+        """
+        if config.observability.metrics.enabled:
+            self._logger.info(
+                "Metrics collection enabled",
+                port=config.observability.metrics.port,
+            )
+            return MetricsCollector()
+        return None
+
+    def _create_audit_logger(self, config: AuditConfig) -> AuditLogger | None:
+        """Create audit logger from config.
+
+        Args:
+            config: Audit configuration
+
+        Returns:
+            AuditLogger instance or None if disabled
+        """
+        if not config.enabled:
+            return None
+
+        storage = AuditStorage(config.storage)
+        self._logger.info(
+            "Audit logging enabled",
+            storage=storage.value,
+            file_path=config.file_path,
+        )
+
+        return AuditLogger(
+            storage=storage,
+            file_path=config.file_path,
+            max_size_mb=config.max_size_mb,
+            max_files=config.max_files,
+            redact_sql=config.redact_sql,
         )
 
     async def startup(self) -> None:
@@ -74,11 +136,66 @@ class PgMcpServer:
             await self._schema_cache.refresh(db_name, pool)
             self._logger.info("Schema cache loaded", database=db_name)
 
+        # Initialize QueryExecutorManager if audit logging is enabled
+        if self._audit_logger:
+            self._executor_manager = QueryExecutorManager(
+                pool_manager=self._pool_manager,
+                sql_parser=self._sql_parser,
+                audit_logger=self._audit_logger,
+            )
+
+            # Register all databases with their access policies
+            for db_config in self.config.databases:
+                self._executor_manager.register_database(
+                    config=db_config,
+                    access_policy_config=db_config.access_policy,
+                )
+                self._logger.info(
+                    "Query executor registered",
+                    database=db_config.name,
+                    policy_enabled=db_config.access_policy.explain_policy.enabled,
+                )
+
+            # Update QueryService with executor manager
+            self._query_service._executor_manager = self._executor_manager
+
+        # Set service info for metrics
+        if self._metrics_collector:
+            self._metrics_collector.set_service_info(
+                version="0.1.0",
+                databases=",".join(self._pool_manager.database_names),
+            )
+
+        # Start metrics HTTP server if enabled
+        if self._metrics_collector and self.config.observability.metrics.enabled:
+            metrics_config = self.config.observability.metrics
+            self._metrics_server = MetricsServer(
+                port=metrics_config.port,
+                registry=self._metrics_collector.registry,
+                path=metrics_config.path,
+            )
+            await self._metrics_server.start()
+            self._logger.info(
+                "Metrics HTTP server started",
+                port=metrics_config.port,
+                path=metrics_config.path,
+            )
+
         self._logger.info("Server startup complete")
 
     async def shutdown(self) -> None:
         """Cleanup server resources."""
         self._logger.info("Shutting down PostgreSQL MCP Server")
+
+        # Stop metrics HTTP server if running
+        if self._metrics_server and self._metrics_server.is_running:
+            await self._metrics_server.stop()
+            self._logger.info("Metrics HTTP server stopped")
+
+        # Close executor manager if initialized
+        if self._executor_manager:
+            await self._executor_manager.close_all()
+
         await self._pool_manager.close_all()
         await self._openai_client.close()
         self._logger.info("Server shutdown complete")

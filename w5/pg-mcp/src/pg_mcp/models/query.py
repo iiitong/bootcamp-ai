@@ -33,6 +33,7 @@ class QueryResponse(BaseModel):
     sql: str | None = None
     result: QueryResult | None = None
     explanation: str | None = None
+    validation: dict | None = None  # LLM-based result validation info
 
 
 class SQLGenerationResult(BaseModel):

@@ -1,7 +1,11 @@
 """Query service for executing natural language queries."""
 
+from __future__ import annotations
+
 import asyncio
+import uuid
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import asyncpg
 import structlog
@@ -25,6 +29,12 @@ from pg_mcp.models import (
     UnsafeSQLError,
 )
 
+if TYPE_CHECKING:
+    from pg_mcp.observability.metrics import MetricsCollector
+    from pg_mcp.security.audit_logger import AuditLogger
+    from pg_mcp.services.query_executor_manager import QueryExecutorManager
+    from pg_mcp.services.result_validator import ResultValidator
+
 logger = structlog.get_logger(__name__)
 
 
@@ -39,7 +49,7 @@ class QueryServiceConfig:
     enable_result_validation: bool = False
 
     @classmethod
-    def from_server_config(cls, config: ServerConfig) -> "QueryServiceConfig":
+    def from_server_config(cls, config: ServerConfig) -> QueryServiceConfig:
         """Create from server configuration.
 
         Args:
@@ -79,6 +89,10 @@ class QueryService:
         openai_client: OpenAIClient,
         sql_parser: SQLParser,
         rate_limiter: RateLimiter,
+        metrics_collector: MetricsCollector | None = None,
+        audit_logger: AuditLogger | None = None,
+        executor_manager: QueryExecutorManager | None = None,
+        result_validator: ResultValidator | None = None,
     ) -> None:
         """Initialize the query service.
 
@@ -90,6 +104,11 @@ class QueryService:
             openai_client: OpenAI client for SQL generation
             sql_parser: SQL parsing and validation
             rate_limiter: Request rate limiting
+            metrics_collector: Optional metrics collector for observability
+            audit_logger: Optional audit logger for security logging
+            executor_manager: Optional query executor manager for advanced
+                execution with policy enforcement and EXPLAIN validation
+            result_validator: Optional result validator for LLM-based validation
         """
         self.config = config
         self._app_config = app_config
@@ -98,9 +117,18 @@ class QueryService:
         self._openai_client = openai_client
         self._sql_parser = sql_parser
         self._rate_limiter = rate_limiter
+        self._metrics_collector = metrics_collector
+        self._audit_logger = audit_logger
+        self._executor_manager = executor_manager
+        self._result_validator = result_validator
         self._logger = logger.bind(service="query_service")
 
-    async def execute_query(self, request: QueryRequest) -> QueryResponse:
+    async def execute_query(
+        self,
+        request: QueryRequest,
+        client_ip: str | None = None,
+        session_id: str | None = None,
+    ) -> QueryResponse:
         """Execute a natural language query.
 
         This is the main entry point for query execution. It handles the full
@@ -108,6 +136,8 @@ class QueryService:
 
         Args:
             request: Query request containing the question and options
+            client_ip: Optional client IP address for audit logging
+            session_id: Optional session ID for tracking
 
         Returns:
             Query response with SQL and/or results
@@ -122,11 +152,50 @@ class QueryService:
             return_type=request.return_type.value,
         )
 
+        # Resolve database name early for metrics
+        db_name = self._resolve_database(request.database)
+
+        # Use metrics tracking if available
+        if self._metrics_collector:
+            with self._metrics_collector.track_request(db_name) as tracker:
+                try:
+                    response = await self._execute_query_internal(
+                        request, db_name, client_ip, session_id
+                    )
+                    tracker.set_status("success")
+                    return response
+                except PgMcpError as e:
+                    tracker.set_status("error", e.code.value)
+                    raise
+                except Exception:
+                    tracker.set_status("error", "INTERNAL_ERROR")
+                    raise
+        else:
+            return await self._execute_query_internal(
+                request, db_name, client_ip, session_id
+            )
+
+    async def _execute_query_internal(
+        self,
+        request: QueryRequest,
+        db_name: str,
+        client_ip: str | None = None,
+        session_id: str | None = None,
+    ) -> QueryResponse:
+        """Internal query execution logic.
+
+        Args:
+            request: Query request containing the question and options
+            db_name: Resolved database name
+            client_ip: Optional client IP address for audit logging
+            session_id: Optional session ID for tracking
+
+        Returns:
+            Query response with SQL and/or results
+        """
         # Check rate limit
         await self._rate_limiter.check_request()
 
-        # Resolve database
-        db_name = self._resolve_database(request.database)
         pool = self._pool_manager.get_pool(db_name)
 
         # Get schema
@@ -149,9 +218,20 @@ class QueryService:
                 explanation=sql_result.explanation,
             )
 
-        # Execute query
+        # Execute query - use executor manager if available
         limit = request.limit or self.config.max_result_rows
-        result = await self._execute_sql(db_name, sql_result.sql, limit)
+
+        if self._executor_manager:
+            result = await self._execute_with_executor(
+                db_name=db_name,
+                sql=sql_result.sql,
+                limit=limit,
+                question=request.question,
+                client_ip=client_ip,
+                session_id=session_id,
+            )
+        else:
+            result = await self._execute_sql(db_name, sql_result.sql, limit)
 
         # Build response
         response = QueryResponse(result=result)
@@ -160,14 +240,116 @@ class QueryService:
             response.sql = sql_result.sql
             response.explanation = sql_result.explanation
 
+        # Perform result validation if enabled and validator is provided
+        if self.config.enable_result_validation and self._result_validator:
+            validation_result = await self._validate_result_with_validator(
+                query=sql_result.sql,
+                user_intent=request.question,
+                result=result,
+            )
+            response.validation = validation_result
+
         self._logger.info(
             "Query completed",
             database=db_name,
             row_count=result.row_count,
             truncated=result.truncated,
+            validated=self.config.enable_result_validation
+            and self._result_validator is not None,
         )
 
         return response
+
+    async def _validate_result_with_validator(
+        self,
+        query: str,
+        user_intent: str,
+        result: QueryResult,
+    ) -> dict:
+        """Validate result using the ResultValidator.
+
+        Args:
+            query: The SQL query that was executed
+            user_intent: The user's original question
+            result: Query result
+
+        Returns:
+            Validation result as a dictionary
+        """
+        # Type guard
+        assert self._result_validator is not None
+
+        # Convert result to dict format for validation
+        result_dicts = [
+            dict(zip(result.columns, row, strict=False)) for row in result.rows
+        ]
+
+        validation = await self._result_validator.validate_result(
+            query=query,
+            user_intent=user_intent,
+            result=result_dicts,
+        )
+
+        return {
+            "is_valid": validation.is_valid,
+            "confidence": validation.confidence,
+            "explanation": validation.explanation,
+        }
+
+    async def _execute_with_executor(
+        self,
+        db_name: str,
+        sql: str,
+        limit: int,
+        question: str,
+        client_ip: str | None = None,
+        session_id: str | None = None,
+    ) -> QueryResult:
+        """Execute query using QueryExecutorManager.
+
+        This method provides enhanced execution with:
+        - Access policy validation
+        - EXPLAIN-based query plan validation
+        - Audit logging
+
+        Args:
+            db_name: Target database name
+            sql: SQL query to execute
+            limit: Maximum rows to return
+            question: Original natural language question
+            client_ip: Client IP for audit logging
+            session_id: Session ID for tracking
+
+        Returns:
+            Query result
+
+        Raises:
+            TableAccessDeniedError: If table access is denied
+            ColumnAccessDeniedError: If column access is denied
+            QueryTooExpensiveError: If query cost exceeds limits
+        """
+        from pg_mcp.services.query_executor import ExecutionContext
+
+        # Type guard - _executor_manager is guaranteed to be set when this method is called
+        assert self._executor_manager is not None
+
+        # Create execution context
+        context = ExecutionContext(
+            request_id=str(uuid.uuid4()),
+            client_ip=client_ip,
+            session_id=session_id,
+        )
+
+        # Get executor for the database
+        executor = self._executor_manager.get_executor(db_name)
+
+        # Execute with policy enforcement
+        return await executor.execute(
+            sql=sql,
+            limit=limit,
+            context=context,
+            question=question,
+        )
 
     def _resolve_database(self, database: str | None) -> str:
         """Resolve the target database name.
