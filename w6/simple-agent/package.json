@@ -1,0 +1,55 @@
+{
+  "name": "simple-agent",
+  "version": "1.0.0",
+  "description": "A simple multi-turn agent SDK with tool calling and MCP support",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "example:basic": "tsx examples/basic.ts",
+    "example:tools": "tsx examples/custom-tools.ts",
+    "example:mcp": "tsx examples/mcp-integration.ts",
+    "example:streaming": "tsx examples/streaming.ts",
+    "example:advanced": "tsx examples/advanced.ts"
+  },
+  "keywords": [
+    "agent",
+    "llm",
+    "openai",
+    "mcp",
+    "tool-calling"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.26.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "dotenv": "^17.2.3",
+    "nanoid": "^5.1.6",
+    "openai": "^6.17.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.13",
+    "@types/node": "^25.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18"
+  }
+}
